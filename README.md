@@ -17,8 +17,8 @@ Dilengkapi dengan tampilan CLI yang menarik dan log yang jelas.
 1. Clone repositori ini:
 
 ```bash
-git clone https://github.com/username/turnkey.git
-cd turnkey
+git clone https://github.com/didinska21/Turnkey-BOT.git
+cd Turnkey-BOT
 ```
 
 2. Install dependencies:
@@ -58,7 +58,7 @@ Ikuti instruksi di terminal untuk memilih berapa address yang ingin dikirimi.
 - RPC Sepolia menggunakan: `https://ethereum-sepolia.publicnode.com`
 - Explorer: https://sepolia.etherscan.io/tx/
 - Default nilai transfer: `0.0001 ETH`
-- Delay antar transaksi: 5â€“10 detik (acak)
+- Delay antar transaksi: 10 detik (acak)
 
 ## Testing
 
