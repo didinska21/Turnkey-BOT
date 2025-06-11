@@ -7,7 +7,7 @@ const boxen = require("boxen");
 const figlet = require("figlet");
 const gradient = require("gradient-string");
 
-// Tampilan banner
+// Banner
 function showBanner() {
   console.clear();
   const banner = figlet.textSync("TURNKEY", {
@@ -25,12 +25,10 @@ const rpcUrl = "https://ethereum-sepolia.publicnode.com";
 const explorerUrl = "https://sepolia.etherscan.io/tx/";
 const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
 const privateKey = process.env.PRIVATE_KEY;
-
 if (!privateKey) {
   console.log(chalk.redBright("PRIVATE_KEY tidak ditemukan di .env"));
   process.exit(1);
 }
-
 const wallet = new ethers.Wallet(privateKey, provider);
 const addressList = JSON.parse(fs.readFileSync("address.json", "utf-8"));
 const logStream = fs.createWriteStream("logs.txt", { flags: "a" });
@@ -85,6 +83,7 @@ const rl = readline.createInterface({
   output: process.stdout,
 });
 
+// Menu utama
 function showMenu() {
   console.clear();
   showBanner();
@@ -113,17 +112,35 @@ function showMenu() {
   });
 }
 
-// Opsi 1 - transfer ke 1 address manual
+// Opsi 1 - transfer ke satu address berkali-kali
 function transferToSpecific() {
-  rl.question(chalk.yellowBright(`Masukkan address tujuan: `), async (to) => {
-    rl.question(chalk.yellowBright(`Masukkan jumlah ETH yang dikirim: `), async (amount) => {
-      await sendTx(to, amount, 1, 1);
-      setTimeout(showMenu, 1500);
+  rl.question(chalk.yellowBright(`Masukkan address tujuan: `), (to) => {
+    rl.question(chalk.yellowBright(`Masukkan jumlah ETH yang dikirim (contoh: 0.0001): `), (amount) => {
+      rl.question(chalk.yellowBright(`Berapa kali ingin mengirim ke address ini?: `), async (count) => {
+        const txCount = parseInt(count);
+        if (isNaN(txCount) || txCount < 1) {
+          console.log(chalk.red("Jumlah transaksi tidak valid."));
+          setTimeout(showMenu, 1500);
+          return;
+        }
+
+        for (let i = 0; i < txCount; i++) {
+          console.log(chalk.blueBright(`\n[${i + 1}/${txCount}] Mengirim ke: ${to}`));
+          await sendTx(to, amount, i + 1, txCount);
+
+          const delayMs = Math.floor(Math.random() * 5000) + 5000;
+          console.log(chalk.gray(`Menunggu ${delayMs / 1000} detik...\n`));
+          await delay(delayMs);
+        }
+
+        console.log(chalk.greenBright(`\n✓ Selesai mengirim ${txCount} transaksi ke ${to}`));
+        setTimeout(showMenu, 1500);
+      });
     });
   });
 }
 
-// Opsi 2 - transfer loop tanpa henti
+// Opsi 2 - loop terus-menerus ke beberapa address
 async function transferToLoop() {
   rl.question(chalk.yellowBright(`Ambil berapa address pertama untuk loop? (1-${addressList.length}): `), async (input) => {
     const count = parseInt(input);
