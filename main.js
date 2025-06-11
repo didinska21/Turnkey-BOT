@@ -3,9 +3,9 @@ const { ethers } = require("ethers");
 const fs = require("fs");
 const readline = require("readline");
 const chalk = require("chalk");
-const boxen = require("boxen");
-const figlet = require("figlet");
+const ora = require("ora");
 const gradient = require("gradient-string");
+const figlet = require("figlet");
 
 // Banner
 function showBanner() {
@@ -18,7 +18,42 @@ function showBanner() {
   console.log(gradient.pastel.multiline(banner));
   console.log(chalk.whiteBright("Build by: t.me/didinska\n"));
 }
-showBanner();
+
+// Delay dengan countdown spinner
+function delayWithCountdown(seconds) {
+  return new Promise((resolve) => {
+    let remaining = seconds;
+    const spinner = ora(`Menunggu ${remaining} detik...`).start();
+    const interval = setInterval(() => {
+      remaining--;
+      spinner.text = `Menunggu ${remaining} detik...`;
+      if (remaining <= 0) {
+        clearInterval(interval);
+        spinner.succeed(`Delay ${seconds} detik selesai.`);
+        resolve();
+      }
+    }, 1000);
+  });
+}
+
+// Countdown 24 jam (fitur 3)
+function countdown24Jam() {
+  return new Promise((resolve) => {
+    let sisa = 86400;
+    const spinner = ora("Menunggu 24 jam untuk pengiriman ulang...").start();
+    const interval = setInterval(() => {
+      const jam = Math.floor(sisa / 3600);
+      const menit = Math.floor((sisa % 3600) / 60);
+      const detik = sisa % 60;
+      spinner.text = `Countdown: ${jam.toString().padStart(2, "0")}:${menit.toString().padStart(2, "0")}:${detik.toString().padStart(2, "0")}`;
+      if (--sisa < 0) {
+        clearInterval(interval);
+        spinner.succeed("Countdown selesai. Mengirim batch baru...");
+        resolve();
+      }
+    }, 1000);
+  });
+}
 
 // Setup
 const rpcUrl = "https://ethereum-sepolia.publicnode.com";
@@ -33,193 +68,100 @@ const wallet = new ethers.Wallet(privateKey, provider);
 const addressList = JSON.parse(fs.readFileSync("address.json", "utf-8"));
 const logStream = fs.createWriteStream("logs.txt", { flags: "a" });
 
-function delay(ms) {
-  return new Promise((res) => setTimeout(res, ms));
-}
-
+// TX
 async function sendTx(to, amountInEther, index, total) {
+  const spinner = ora(`Mengirim ke ${to}...`).start();
   try {
-    const balance = await wallet.getBalance();
-    const amountWei = ethers.utils.parseEther(amountInEther);
-
-    if (balance.lt(amountWei)) {
-      const message = `
-${chalk.redBright.bold("✗ SALDO TIDAK CUKUP")} [${index}/${total}]
-To        : ${chalk.cyan(to)}
-Dibutuhkan: ${chalk.yellow(amountInEther)} ETH
-Saldo     : ${chalk.magenta(ethers.utils.formatEther(balance))} ETH
-Waktu     : ${chalk.gray(new Date().toLocaleString())}
-`;
-      console.log(boxen(message, {
-        padding: 1,
-        margin: 1,
-        borderStyle: "round",
-        borderColor: "red",
-      }));
-      logStream.write(`[SALDO KURANG] ${to} | Butuh: ${amountInEther} ETH | Punya: ${ethers.utils.formatEther(balance)} ETH | ${new Date().toLocaleString()}\n`);
+    const saldo = await wallet.getBalance();
+    if (saldo.lt(ethers.utils.parseEther(amountInEther))) {
+      spinner.fail(chalk.redBright(`SALDO ETH TIDAK CUKUP untuk TX ${index}/${total}`));
+      logStream.write(`[FAILED] ${to} | SALDO TIDAK CUKUP | ${new Date().toLocaleString()}\n`);
       return;
     }
 
-    const tx = await wallet.sendTransaction({ to, value: amountWei });
-    await tx.wait();
+    const tx = await wallet.sendTransaction({
+      to,
+      value: ethers.utils.parseEther(amountInEther),
+    });
 
-    const newBalance = await wallet.getBalance();
-    const message = `
-${chalk.greenBright.bold("✓ SUCCESS")}  [${index}/${total}]
-To         : ${chalk.cyan(to)}
-TX Hash    : ${chalk.yellow(tx.hash)}
-Explorer   : ${chalk.underline(explorerUrl + tx.hash)}
-Sisa saldo : ${chalk.magenta(ethers.utils.formatEther(newBalance))} ETH
-Waktu      : ${chalk.gray(new Date().toLocaleString())}
-`;
-    console.log(boxen(message, {
-      padding: 1,
-      margin: 1,
-      borderStyle: "round",
-      borderColor: "green",
-    }));
+    spinner.text = "Menunggu konfirmasi...";
+    await tx.wait();
+    const balance = await wallet.getBalance();
+
+    spinner.succeed(`TX Sukses ke ${to} | Sisa: ${ethers.utils.formatEther(balance)} ETH`);
     logStream.write(`[SUCCESS] ${to} | ${tx.hash} | ${new Date().toLocaleString()}\n`);
+    console.log(chalk.gray(`Explorer: ${explorerUrl}${tx.hash}\n`));
   } catch (error) {
-    const message = `
-${chalk.redBright.bold("✗ GAGAL")} [${index}/${total}]
-To        : ${chalk.cyan(to)}
-Error     : ${chalk.red(error.message)}
-Waktu     : ${chalk.gray(new Date().toLocaleString())}
-`;
-    console.log(boxen(message, {
-      padding: 1,
-      margin: 1,
-      borderStyle: "round",
-      borderColor: "red",
-    }));
-    logStream.write(`[FAILED]  ${to} | ${error.message} | ${new Date().toLocaleString()}\n`);
+    spinner.fail(`TX GAGAL ke ${to} | ${error.message}`);
+    logStream.write(`[FAILED] ${to} | ${error.message} | ${new Date().toLocaleString()}\n`);
   }
 }
 
-// CLI Interface
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-// Menu
 function showMenu() {
-  console.clear();
   showBanner();
-  const menu = `
+  console.log(gradient.pastel(`
 1. Transfer ke address tertentu
 2. Transfer ke beberapa address (loop tanpa henti)
-3. Kirim ke X address acak dari address.json (ulang setiap 24 jam)
+3. Kirim ke X address acak dari address.json (24 jam interval)
 4. Exit
-`;
-  console.log(gradient.pastel(menu));
+`));
   rl.question(chalk.yellowBright("Pilih opsi (1-4): "), (option) => {
     switch (option) {
-      case '1':
-        transferToSpecific();
-        break;
-      case '2':
-        transferToLoop();
-        break;
-      case '3':
-        transferRandomFromList();
-        break;
-      case '4':
-        console.log(chalk.green("Keluar dari program."));
-        rl.close();
-        break;
-      default:
-        console.log(chalk.red("Pilihan tidak valid."));
-        setTimeout(showMenu, 1500);
+      case '1': transferToSpecific(); break;
+      case '2': transferToLoop(); break;
+      case '3': transferToRandom(); break;
+      case '4': console.log(chalk.green("Keluar dari program.")); rl.close(); break;
+      default: console.log(chalk.red("Pilihan tidak valid.")); setTimeout(showMenu, 1500);
     }
   });
 }
 
-// Opsi 1
 function transferToSpecific() {
-  rl.question(chalk.yellowBright(`Masukkan address tujuan: `), (to) => {
-    rl.question(chalk.yellowBright(`Masukkan jumlah ETH (contoh: 0.0001): `), (amount) => {
-      rl.question(chalk.yellowBright(`Berapa kali ingin mengirim?: `), async (count) => {
+  rl.question(chalk.yellow("Address tujuan: "), (to) => {
+    rl.question(chalk.yellow("Jumlah ETH (contoh: 0.0001): "), (amount) => {
+      rl.question(chalk.yellow("Berapa kali mengirim ke address ini?: "), async (count) => {
         const txCount = parseInt(count);
-        if (isNaN(txCount) || txCount < 1) {
-          console.log(chalk.red("Jumlah tidak valid."));
-          setTimeout(showMenu, 1500);
-          return;
-        }
-
+        if (isNaN(txCount) || txCount < 1) return showMenu();
         for (let i = 0; i < txCount; i++) {
-          console.log(chalk.blueBright(`\n[${i + 1}/${txCount}] Mengirim ke: ${to}`));
           await sendTx(to, amount, i + 1, txCount);
-          const delayMs = Math.floor(Math.random() * 5000) + 5000;
-          console.log(chalk.gray(`Menunggu ${delayMs / 1000} detik...\n`));
-          await delay(delayMs);
+          await delayWithCountdown(Math.floor(Math.random() * 5) + 5);
         }
-
-        console.log(chalk.greenBright(`\n✓ Selesai mengirim ${txCount} transaksi ke ${to}`));
         setTimeout(showMenu, 1500);
       });
     });
   });
 }
 
-// Opsi 2
 async function transferToLoop() {
-  rl.question(chalk.yellowBright(`Ambil berapa address pertama? (1-${addressList.length}): `), async (input) => {
+  rl.question(chalk.yellow(`Ambil berapa address pertama untuk loop? (1-${addressList.length}): `), async (input) => {
     const count = parseInt(input);
-    if (isNaN(count) || count < 1 || count > addressList.length) {
-      console.log(chalk.red("Input tidak valid."));
-      setTimeout(showMenu, 1500);
-      return;
-    }
-
-    console.log(chalk.green(`\nLoop kirim ke ${count} address terus menerus.`));
-    console.log(chalk.gray("Tekan CTRL + C untuk berhenti.\n"));
-
-    let loopIndex = 0;
-    let txCount = 1;
-
+    if (isNaN(count) || count < 1 || count > addressList.length) return showMenu();
+    console.log(chalk.green(`Loop mengirim ke ${count} address tanpa henti (CTRL+C untuk stop)`));
+    let loopIndex = 0, txCount = 1;
     while (true) {
-      const target = addressList[loopIndex];
-      console.log(chalk.blueBright(`\n[${txCount}] Mengirim ke: ${target}`));
-      await sendTx(target, "0.0001", txCount, "∞");
-      const delayMs = Math.floor(Math.random() * 5000) + 5000;
-      console.log(chalk.gray(`Menunggu ${delayMs / 1000} detik...\n`));
-      await delay(delayMs);
+      const to = addressList[loopIndex];
+      await sendTx(to, "0.0001", txCount, "∞");
+      await delayWithCountdown(Math.floor(Math.random() * 5) + 5);
       loopIndex = (loopIndex + 1) % count;
       txCount++;
     }
   });
 }
 
-// Opsi 3
-function transferRandomFromList() {
-  rl.question(chalk.yellowBright(`Ingin mengirim ke berapa address acak? (max: ${addressList.length}): `), async (input) => {
+async function transferToRandom() {
+  rl.question(chalk.yellow(`Berapa address acak ingin dikirim hari ini?: `), async (input) => {
     const count = parseInt(input);
-    if (isNaN(count) || count < 1 || count > addressList.length) {
-      console.log(chalk.red("Input tidak valid."));
-      setTimeout(showMenu, 1500);
-      return;
-    }
-
-    async function doSendRound() {
-      const shuffled = addressList.sort(() => 0.5 - Math.random());
-      const selected = shuffled.slice(0, count);
-      console.log(chalk.greenBright(`\nMengirim ke ${count} address acak:`));
-
-      for (let i = 0; i < selected.length; i++) {
-        console.log(chalk.blueBright(`\n[${i + 1}/${count}] Mengirim ke: ${selected[i]}`));
-        await sendTx(selected[i], "0.0001", i + 1, count);
-        const delayMs = Math.floor(Math.random() * 5000) + 5000;
-        console.log(chalk.gray(`Menunggu ${delayMs / 1000} detik...\n`));
-        await delay(delayMs);
+    if (isNaN(count) || count < 1 || count > addressList.length) return showMenu();
+    while (true) {
+      const shuffled = addressList.sort(() => 0.5 - Math.random()).slice(0, count);
+      for (let i = 0; i < shuffled.length; i++) {
+        await sendTx(shuffled[i], "0.0001", i + 1, count);
+        await delayWithCountdown(Math.floor(Math.random() * 5) + 5);
       }
-
-      console.log(chalk.greenBright(`\n✓ Selesai kirim ke ${count} address. Menunggu 24 jam...\n`));
-      await delay(24 * 60 * 60 * 1000); // 24 jam
-      await doSendRound(); // Ulang lagi besok
+      await countdown24Jam();
     }
-
-    await doSendRound();
   });
 }
 
