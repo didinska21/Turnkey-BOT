@@ -151,7 +151,7 @@ async function transferToLoop() {
 }
 
 async function transferToRandom() {
-  rl.question(chalk.yellow(`Berapa address acak ingin dikirim hari ini?: `), async (input) => {
+  rl.question(chalk.yellow(`Input jumlah transfer max(335): `), async (input) => {
     const count = parseInt(input);
     if (isNaN(count) || count < 1 || count > addressList.length) return showMenu();
     while (true) {
