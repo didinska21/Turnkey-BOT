@@ -1,7 +1,7 @@
 {
   "name": "turnkey-bot",
   "version": "1.0.0",
-  "description": "",
+  "description": "A CLI bot with gradient, chalk, ethers, and animated output",
   "main": "main.js",
   "type": "commonjs",
   "scripts": {
@@ -10,10 +10,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/didinska21/Turnkey-BOT.git"
+    "url": "https://github.com/didinska21/Turnkey-BOT.git"
   },
   "keywords": [],
-  "author": "",
+  "author": "Didin Ska",
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/didinska21/Turnkey-BOT/issues"
@@ -23,8 +23,9 @@
     "boxen": "^8.0.1",
     "chalk": "4.1.2",
     "dotenv": "^16.5.0",
-    "ethers": "^6.14.3",
+    "ethers": "^5.8.0",
     "figlet": "^1.8.1",
-    "gradient-string": "1.2.0"
+    "gradient-string": "1.2.0",
+    "ora": "^5.4.1"
   }
 }
