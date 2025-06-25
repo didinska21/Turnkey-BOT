@@ -1,4 +1,3 @@
-
 # TURNKEY
 
 Script Node.js untuk mengirim token ETH (Sepolia Testnet) ke banyak alamat secara otomatis dari terminal.  
@@ -27,10 +26,10 @@ cd Turnkey-BOT
 npm install
 ```
 
-3. Buat file `.env` dan masukkan private key wallet:
+3. masukkan private key wallet:
 
 ```
-PRIVATE_KEY=0xYOUR_PRIVATE_KEY_HERE
+echo 'PRIVATE_KEY=0x1233455' >> .env
 ```
 
 > Gunakan wallet yang memiliki saldo ETH di Sepolia Testnet.
