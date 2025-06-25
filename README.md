@@ -1,65 +1,38 @@
-# TURNKEY
+# Cara Install & Menjalankan Turnkey-BOT
 
-Script Node.js untuk mengirim token ETH (Sepolia Testnet) ke banyak alamat secara otomatis dari terminal.  
-Dilengkapi dengan tampilan CLI yang menarik dan log yang jelas.
+Ikuti langkah-langkah berikut di terminal:
 
-## Fitur
+1. Clone repository:
+   ```bash
+   git clone https://github.com/didinska21/Turnkey-BOT
+   ```
 
-- Kirim ETH testnet (Sepolia) ke banyak address dari file JSON
-- Input jumlah tujuan dari CLI
-- Delay acak antar transaksi
-- Log sukses & error dengan tampilan berwarna
-- Tampilan banner keren di awal
+2. Masuk ke folder project:
+   ```bash
+   cd Turnkey-BOT
+   ```
 
-## Instalasi
+3. Install semua dependensi:
+   ```bash
+   npm install boxen@8.0.1 chalk@4.1.2 dotenv@16.5.0 ethers@5.8.0 figlet@1.8.1 gradient-string@1.2.0 ora@5.4.1
+   ```
 
-1. Clone repositori ini:
+4. Tambahkan private key ke file .env:
+   ```bash
+   echo 'PRIVATE_KEY=0xYOUR_PRIVATE_KEY_HERE' >> .env
+   ```
 
-```bash
-git clone https://github.com/didinska21/Turnkey-BOT.git
-cd Turnkey-BOT
-```
+5. (Opsional) Tambahkan juga RPC_URL jika dibutuhkan:
+   ```bash
+   echo 'RPC_URL=https://your-rpc-url-here' >> .env
+   ```
 
-2. Install dependencies:
+6. Buat screen
+   ```bash
+   screen -S turnkey
+   ```
 
-```bash
-npm install
-```
-
-3. masukkan private key wallet:
-
-```
-echo 'PRIVATE_KEY=0x1233455' >> .env
-```
-
-> Gunakan wallet yang memiliki saldo ETH di Sepolia Testnet.
-
-4. Buat file `address.json` berisi array address tujuan, contoh:
-
-```json
-[
-  "0xAbc123...",
-  "0xDef456...",
-  "0x789Ghi..."
-]
-```
-
-## Menjalankan
-
-```bash
-node main.js
-```
-
-Ikuti instruksi di terminal untuk memilih berapa address yang ingin dikirimi.
-
-## Konfigurasi
-
-- RPC Sepolia menggunakan: `https://ethereum-sepolia.publicnode.com`
-- Explorer: https://sepolia.etherscan.io/tx/
-- Default nilai transfer: `0.0001 ETH`
-- Delay antar transaksi: 10 detik (acak)
-
-## Testing
-
-Gunakan faucet untuk mendapatkan ETH testnet di Sepolia:  
-[https://sepoliafaucet.com](https://sepoliafaucet.com)
+7. Jalankan bot:
+   ```bash
+   node main.js
+   ```
