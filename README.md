@@ -22,17 +22,12 @@ Ikuti langkah-langkah berikut di terminal:
    echo 'PRIVATE_KEY=0xYOUR_PRIVATE_KEY_HERE' >> .env
    ```
 
-5. (Opsional) Tambahkan juga RPC_URL jika dibutuhkan:
-   ```bash
-   echo 'RPC_URL=https://your-rpc-url-here' >> .env
-   ```
-
-6. Buat screen
+5. Buat screen
    ```bash
    screen -S turnkey
    ```
 
-7. Jalankan bot:
+6. Jalankan bot:
    ```bash
    node main.js
    ```
