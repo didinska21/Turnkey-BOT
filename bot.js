@@ -202,7 +202,16 @@ function maskProxy(proxyUrl) {
   
   try {
     const url = new URL(proxyUrl);
-    return `${url.hostname}:${url.port}`;
+    // Extract IP from proxy URL (socks5://ip:port or socks5://user:pass@ip:port)
+    const hostPart = url.host; // Gets "ip:port" or "user:pass@ip:port"
+    
+    // If there's authentication, extract the IP:port part after @
+    if (hostPart.includes('@')) {
+      const parts = hostPart.split('@');
+      return parts[1]; // Returns "ip:port"
+    }
+    
+    return hostPart; // Returns "ip:port"
   } catch {
     return "Invalid";
   }
