@@ -166,133 +166,144 @@ async function sendTransaction(amount, txNumber, totalTx) {
 }
 
 // ===== INTERACTIVE MENU =====
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
-
-function question(query) {
-  return new Promise((resolve) => rl.question(query, resolve));
+function question(query, rlInterface) {
+  return new Promise((resolve) => {
+    rlInterface.question(query, (answer) => {
+      resolve(answer);
+    });
+  });
 }
 
 async function main() {
-  showBanner();
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
 
-  // Show balance
-  const balanceSpinner = ora("📊 Mengecek saldo...").start();
-  const balance = await getBalance();
-  balanceSpinner.succeed(
-    chalk.green(`💰 Saldo Anda: ${chalk.bold.yellow(balance)} ETH (Sepolia)`)
-  );
-  console.log();
-
-  // Input amount
-  const amountInput = await question(
-    chalk.cyan(`💵 Masukkan jumlah ETH per transaksi [${chalk.yellow(DEFAULT_AMOUNT)}]: `)
-  );
-  const amount = amountInput.trim() || DEFAULT_AMOUNT;
-
-  // Validate amount
   try {
-    const amountNum = parseFloat(amount);
-    if (isNaN(amountNum) || amountNum <= 0) {
+    showBanner();
+
+    // Show balance
+    const balanceSpinner = ora("📊 Mengecek saldo...").start();
+    const balance = await getBalance();
+    balanceSpinner.succeed(
+      chalk.green(`💰 Saldo Anda: ${chalk.bold.yellow(balance)} ETH (Sepolia)`)
+    );
+    console.log();
+
+    // Input amount
+    const amountInput = await question(
+      chalk.cyan(`💵 Masukkan jumlah ETH per transaksi [${chalk.yellow(DEFAULT_AMOUNT)}]: `),
+      rl
+    );
+    const amount = amountInput.trim() || DEFAULT_AMOUNT;
+
+    // Validate amount
+    try {
+      const amountNum = parseFloat(amount);
+      if (isNaN(amountNum) || amountNum <= 0) {
+        console.log(chalk.red("\n❌ Jumlah tidak valid!\n"));
+        rl.close();
+        return;
+      }
+    } catch (error) {
       console.log(chalk.red("\n❌ Jumlah tidak valid!\n"));
       rl.close();
       return;
     }
-  } catch (error) {
-    console.log(chalk.red("\n❌ Jumlah tidak valid!\n"));
-    rl.close();
-    return;
-  }
 
-  // Input transaction count
-  const countInput = await question(
-    chalk.cyan(`🔢 Berapa kali transaksi yang ingin dikirim?: `)
-  );
-  const txCount = parseInt(countInput);
+    // Input transaction count
+    const countInput = await question(
+      chalk.cyan(`🔢 Berapa kali transaksi yang ingin dikirim?: `),
+      rl
+    );
+    const txCount = parseInt(countInput);
 
-  if (isNaN(txCount) || txCount < 1) {
-    console.log(chalk.red("\n❌ Jumlah transaksi tidak valid!\n"));
-    rl.close();
-    return;
-  }
+    if (isNaN(txCount) || txCount < 1) {
+      console.log(chalk.red("\n❌ Jumlah transaksi tidak valid!\n"));
+      rl.close();
+      return;
+    }
 
-  console.log();
-
-  // Show summary and estimate
-  const estimate = await estimateGasCost(amount);
-  if (estimate) {
-    const totalAmount = (parseFloat(amount) * txCount).toFixed(6);
-    const estimatedGas = (parseFloat(estimate.gasCost) * txCount).toFixed(6);
-    const estimatedTotal = (parseFloat(estimate.totalCost) * txCount).toFixed(6);
-
-    console.log(chalk.cyan.bold("📋 RINGKASAN TRANSAKSI"));
-    console.log(chalk.cyan("─".repeat(60)));
-    console.log(chalk.white(`   Amount per TX    : ${chalk.yellow(amount)} ETH`));
-    console.log(chalk.white(`   Jumlah TX        : ${chalk.yellow(txCount)}x`));
-    console.log(chalk.white(`   Total Amount     : ${chalk.yellow(totalAmount)} ETH`));
-    console.log(chalk.white(`   Estimasi Gas     : ${chalk.yellow(estimatedGas)} ETH`));
-    console.log(chalk.white(`   Estimasi Total   : ${chalk.yellow.bold(estimatedTotal)} ETH`));
-    console.log(chalk.cyan("─".repeat(60)));
     console.log();
-  }
 
-  // Confirm
-  const confirm = await question(chalk.yellow("⚠️  Lanjutkan? (y/n): "));
-  if (confirm.toLowerCase() !== "y") {
-    console.log(chalk.red("\n❌ Dibatalkan.\n"));
+    // Show summary and estimate
+    const estimate = await estimateGasCost(amount);
+    if (estimate) {
+      const totalAmount = (parseFloat(amount) * txCount).toFixed(6);
+      const estimatedGas = (parseFloat(estimate.gasCost) * txCount).toFixed(6);
+      const estimatedTotal = (parseFloat(estimate.totalCost) * txCount).toFixed(6);
+
+      console.log(chalk.cyan.bold("📋 RINGKASAN TRANSAKSI"));
+      console.log(chalk.cyan("─".repeat(60)));
+      console.log(chalk.white(`   Amount per TX    : ${chalk.yellow(amount)} ETH`));
+      console.log(chalk.white(`   Jumlah TX        : ${chalk.yellow(txCount)}x`));
+      console.log(chalk.white(`   Total Amount     : ${chalk.yellow(totalAmount)} ETH`));
+      console.log(chalk.white(`   Estimasi Gas     : ${chalk.yellow(estimatedGas)} ETH`));
+      console.log(chalk.white(`   Estimasi Total   : ${chalk.yellow.bold(estimatedTotal)} ETH`));
+      console.log(chalk.cyan("─".repeat(60)));
+      console.log();
+    }
+
+    // Confirm
+    const confirm = await question(chalk.yellow("⚠️  Lanjutkan? (y/n): "), rl);
+    if (confirm.toLowerCase() !== "y") {
+      console.log(chalk.red("\n❌ Dibatalkan.\n"));
+      rl.close();
+      return;
+    }
+
+    console.log();
+    console.log(chalk.green.bold("🚀 Memulai pengiriman transaksi...\n"));
+
+    // Execute transactions
+    let successCount = 0;
+    let failCount = 0;
+    const startTime = Date.now();
+
+    for (let i = 1; i <= txCount; i++) {
+      const success = await sendTransaction(amount, i, txCount);
+      if (success) {
+        successCount++;
+      } else {
+        failCount++;
+      }
+
+      // Delay between transactions (except last one)
+      if (i < txCount) {
+        const delayTime = getRandomDelay();
+        await delay(delayTime);
+      }
+    }
+
+    // Final summary
+    const endTime = Date.now();
+    const duration = Math.floor((endTime - startTime) / 1000);
+    const finalBalance = await getBalance();
+
+    console.log();
+    console.log(chalk.green.bold("═".repeat(60)));
+    console.log(chalk.green.bold("🎉 SELESAI!"));
+    console.log(chalk.green.bold("═".repeat(60)));
+    console.log(chalk.white(`   ✅ Sukses       : ${chalk.green.bold(successCount)}/${txCount}`));
+    console.log(chalk.white(`   ❌ Gagal        : ${chalk.red.bold(failCount)}/${txCount}`));
+    console.log(chalk.white(`   ⏱️  Durasi       : ${chalk.cyan(duration)} detik`));
+    console.log(chalk.white(`   💰 Saldo Akhir  : ${chalk.yellow.bold(finalBalance)} ETH`));
+    console.log(chalk.green.bold("═".repeat(60)));
+    console.log();
+    console.log(chalk.gray(`📝 Log tersimpan di: activity_logs.txt`));
+    console.log();
+
     rl.close();
-    return;
+  } catch (error) {
+    console.log(chalk.red(`\n❌ Error: ${error.message}\n`));
+    rl.close();
+    throw error;
   }
-
-  console.log();
-  console.log(chalk.green.bold("🚀 Memulai pengiriman transaksi...\n"));
-
-  // Execute transactions
-  let successCount = 0;
-  let failCount = 0;
-  const startTime = Date.now();
-
-  for (let i = 1; i <= txCount; i++) {
-    const success = await sendTransaction(amount, i, txCount);
-    if (success) {
-      successCount++;
-    } else {
-      failCount++;
-    }
-
-    // Delay between transactions (except last one)
-    if (i < txCount) {
-      const delayTime = getRandomDelay();
-      await delay(delayTime);
-    }
-  }
-
-  // Final summary
-  const endTime = Date.now();
-  const duration = Math.floor((endTime - startTime) / 1000);
-  const finalBalance = await getBalance();
-
-  console.log();
-  console.log(chalk.green.bold("═".repeat(60)));
-  console.log(chalk.green.bold("🎉 SELESAI!"));
-  console.log(chalk.green.bold("═".repeat(60)));
-  console.log(chalk.white(`   ✅ Sukses       : ${chalk.green.bold(successCount)}/${txCount}`));
-  console.log(chalk.white(`   ❌ Gagal        : ${chalk.red.bold(failCount)}/${txCount}`));
-  console.log(chalk.white(`   ⏱️  Durasi       : ${chalk.cyan(duration)} detik`));
-  console.log(chalk.white(`   💰 Saldo Akhir  : ${chalk.yellow.bold(finalBalance)} ETH`));
-  console.log(chalk.green.bold("═".repeat(60)));
-  console.log();
-  console.log(chalk.gray(`📝 Log tersimpan di: activity_logs.txt`));
-  console.log();
-
-  rl.close();
 }
 
 // ===== RUN =====
 main().catch((error) => {
-  console.log(chalk.red(`\n❌ Error: ${error.message}\n`));
-  rl.close();
+  console.log(chalk.red(`\n❌ Fatal Error: ${error.message}\n`));
   process.exit(1);
 });
