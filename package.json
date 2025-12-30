@@ -1,31 +1,32 @@
 {
   "name": "turnkey-bot",
-  "version": "1.0.0",
-  "description": "A CLI bot with gradient, chalk, ethers, and animated output",
+  "version": "2.0.0",
+  "description": "Ethereum batch transaction bot with SOCKS5 proxy support",
   "main": "main.js",
-  "type": "commonjs",
   "scripts": {
     "start": "node main.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node main.js"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/didinska21/Turnkey-BOT.git"
-  },
-  "keywords": [],
-  "author": "Didin Ska",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/didinska21/Turnkey-BOT/issues"
-  },
-  "homepage": "https://github.com/didinska21/Turnkey-BOT#readme",
+  "keywords": [
+    "ethereum",
+    "bot",
+    "proxy",
+    "socks5",
+    "batch",
+    "transaction"
+  ],
+  "author": "",
+  "license": "MIT",
   "dependencies": {
-    "boxen": "^8.0.1",
-    "chalk": "4.1.2",
-    "dotenv": "^16.5.0",
-    "ethers": "^5.8.0",
-    "figlet": "^1.8.1",
-    "gradient-string": "1.2.0",
-    "ora": "^5.4.1"
+    "chalk": "^4.1.2",
+    "dotenv": "^16.0.3",
+    "ethers": "^5.7.2",
+    "figlet": "^1.6.0",
+    "gradient-string": "^2.0.2",
+    "ora": "^5.4.1",
+    "socks-proxy-agent": "^8.0.2"
+  },
+  "engines": {
+    "node": ">=14.0.0"
   }
 }
