@@ -7,6 +7,7 @@ const chalk = require("chalk");
 const ora = require("ora");
 const gradient = require("gradient-string");
 const figlet = require("figlet");
+const dns = require("dns").promises;
 
 // ===== LOAD CONFIGURATION =====
 let config;
@@ -197,6 +198,47 @@ function getRandomGasPrice() {
   return parseFloat(random.toFixed(9));
 }
 
+// ===== PROXY IP CACHE =====
+const proxyIpCache = new Map();
+
+async function resolveProxyIp(proxyUrl) {
+  if (!proxyUrl) return "Direct";
+  
+  // Check cache first
+  if (proxyIpCache.has(proxyUrl)) {
+    return proxyIpCache.get(proxyUrl);
+  }
+  
+  try {
+    const url = new URL(proxyUrl);
+    const hostname = url.hostname;
+    const port = url.port;
+    
+    // Check if hostname is already an IP
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+      const result = `${hostname}:${port}`;
+      proxyIpCache.set(proxyUrl, result);
+      return result;
+    }
+    
+    // Resolve hostname to IP
+    try {
+      const addresses = await dns.resolve4(hostname);
+      const ip = addresses[0]; // Use first IP
+      const result = `${ip}:${port}`;
+      proxyIpCache.set(proxyUrl, result);
+      return result;
+    } catch (dnsError) {
+      // If DNS fails, fallback to hostname:port
+      const result = `${hostname}:${port}`;
+      proxyIpCache.set(proxyUrl, result);
+      return result;
+    }
+  } catch {
+    return "Invalid";
+  }
+}
+
 function maskProxy(proxyUrl) {
   if (!proxyUrl) return "Direct";
   
@@ -227,7 +269,7 @@ async function sendTransaction(walletData, walletIndex, txNumber, totalTx, total
   const { wallet, proxy } = walletData;
   const amount = getRandomAmount();
   const gasPriceGwei = getRandomGasPrice();
-  const proxyInfo = proxy ? maskProxy(proxy) : "Direct";
+  const proxyInfo = await resolveProxyIp(proxy);
   
   const spinner = ora({
     text: `📤 W${walletIndex + 1}/${totalWallets} | TX ${txNumber}/${totalTx} | ${proxyInfo}...`,
@@ -405,7 +447,7 @@ async function runBatch(walletDataArray, batchNumber) {
   console.log(chalk.cyan.bold("📊 Statistik Per Wallet:"));
   for (let i = 0; i < walletDataArray.length; i++) {
     const balance = await getBalance(walletDataArray[i].wallet);
-    const proxyInfo = walletDataArray[i].proxy ? maskProxy(walletDataArray[i].proxy) : "Direct";
+    const proxyInfo = await resolveProxyIp(walletDataArray[i].proxy);
     console.log(
       chalk.white(
         `   W${i + 1}: ${walletStats[i].count} TX | ${walletStats[i].sent.toFixed(6)} ETH | Gas: ${walletStats[i].gasUsed.toFixed(8)} ETH | Sisa: ${balance} ETH | 🌐 ${proxyInfo}`
@@ -470,7 +512,7 @@ async function main() {
       totalBalance += balanceNum;
       
       const address = walletDataArray[i].wallet.address;
-      const proxyInfo = walletDataArray[i].proxy ? maskProxy(walletDataArray[i].proxy) : "Direct";
+      const proxyInfo = await resolveProxyIp(walletDataArray[i].proxy);
       
       console.log(
         chalk.white(
