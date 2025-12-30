@@ -32,7 +32,7 @@ const logStream = fs.createWriteStream("activity_logs.txt", { flags: "a" });
 // ===== UTILITIES =====
 function showBanner() {
   console.clear();
-  const banner = figlet.textSync("TURNKEY", {
+  const banner = figlet.textSync("TURNKEY BOT", {
     font: "ANSI Shadow",
     horizontalLayout: "default",
   });
@@ -166,20 +166,20 @@ async function sendTransaction(amount, txNumber, totalTx) {
 }
 
 // ===== INTERACTIVE MENU =====
-function question(query, rlInterface) {
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+});
+
+function question(query) {
   return new Promise((resolve) => {
-    rlInterface.question(query, (answer) => {
+    rl.question(query, (answer) => {
       resolve(answer);
     });
   });
 }
 
 async function main() {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
   try {
     showBanner();
 
@@ -193,8 +193,7 @@ async function main() {
 
     // Input amount
     const amountInput = await question(
-      chalk.cyan(`💵 Masukkan jumlah ETH per transaksi [${chalk.yellow(DEFAULT_AMOUNT)}]: `),
-      rl
+      chalk.cyan(`💵 Masukkan jumlah ETH per transaksi [${chalk.yellow(DEFAULT_AMOUNT)}]: `)
     );
     const amount = amountInput.trim() || DEFAULT_AMOUNT;
 
@@ -214,8 +213,7 @@ async function main() {
 
     // Input transaction count
     const countInput = await question(
-      chalk.cyan(`🔢 Berapa kali transaksi yang ingin dikirim?: `),
-      rl
+      chalk.cyan(`🔢 Berapa kali transaksi yang ingin dikirim?: `)
     );
     const txCount = parseInt(countInput);
 
@@ -246,7 +244,7 @@ async function main() {
     }
 
     // Confirm
-    const confirm = await question(chalk.yellow("⚠️  Lanjutkan? (y/n): "), rl);
+    const confirm = await question(chalk.yellow("⚠️  Lanjutkan? (y/n): "));
     if (confirm.toLowerCase() !== "y") {
       console.log(chalk.red("\n❌ Dibatalkan.\n"));
       rl.close();
