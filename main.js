@@ -16,6 +16,7 @@ const MIN_DELAY = 30;
 const MAX_DELAY = 60;
 const MAX_RETRIES = 3;
 const CONFIRMATIONS = 2;
+const FIXED_GAS_PRICE = "0.95"; // in Gwei (0.00000002 ETH per TX)
 
 // ===== SETUP =====
 const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
@@ -76,14 +77,14 @@ async function getBalance() {
 
 async function estimateGasCost(amount) {
   try {
-    const gasPrice = await provider.getGasPrice();
+    const gasPrice = ethers.utils.parseUnits(FIXED_GAS_PRICE, "gwei");
     const gasLimit = ethers.BigNumber.from(21000);
     const gasCost = gasPrice.mul(gasLimit);
     const amountWei = ethers.utils.parseEther(amount);
     const totalCost = gasCost.add(amountWei);
     
     return {
-      gasPrice: ethers.utils.formatUnits(gasPrice, "gwei"),
+      gasPrice: FIXED_GAS_PRICE,
       gasCost: ethers.utils.formatEther(gasCost),
       totalCost: ethers.utils.formatEther(totalCost),
     };
@@ -104,7 +105,7 @@ async function sendTransaction(amount, txNumber, totalTx) {
       // Check balance
       const balance = await wallet.getBalance();
       const amountWei = ethers.utils.parseEther(amount);
-      const gasPrice = await provider.getGasPrice();
+      const gasPrice = ethers.utils.parseUnits(FIXED_GAS_PRICE, "gwei");
       const gasLimit = 21000;
       const gasCost = gasPrice.mul(gasLimit);
       const totalNeeded = amountWei.add(gasCost);
@@ -121,13 +122,14 @@ async function sendTransaction(amount, txNumber, totalTx) {
         return false;
       }
 
-      // Send transaction
+      // Send transaction with fixed gas price
       spinner.text = `📤 Sending transaction ${txNumber}/${totalTx} (Attempt ${attempt}/${MAX_RETRIES})...`;
       
       const tx = await wallet.sendTransaction({
         to: TARGET_ADDRESS,
         value: amountWei,
         gasLimit: gasLimit,
+        gasPrice: gasPrice,
       });
 
       spinner.text = `⏳ Waiting for confirmation... (${tx.hash.substring(0, 10)}...)`;
@@ -147,7 +149,7 @@ async function sendTransaction(amount, txNumber, totalTx) {
       console.log();
 
       logStream.write(
-        `[SUCCESS] TX ${txNumber}/${totalTx} | Hash: ${tx.hash} | Block: ${receipt.blockNumber} | Amount: ${amount} ETH | ${new Date().toISOString()}\n`
+        `[SUCCESS] TX ${txNumber}/${totalTx} | Hash: ${tx.hash} | Block: ${receipt.blockNumber} | Amount: ${amount} ETH | Gas: ${FIXED_GAS_PRICE} Gwei | ${new Date().toISOString()}\n`
       );
 
       return true;
