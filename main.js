@@ -33,7 +33,7 @@ const logStream = fs.createWriteStream("activity_logs.txt", { flags: "a" });
 // ===== UTILITIES =====
 function showBanner() {
   console.clear();
-  const banner = figlet.textSync("TURNKEY", {
+  const banner = figlet.textSync("TURNKEY BOT", {
     font: "ANSI Shadow",
     horizontalLayout: "default",
   });
@@ -67,6 +67,14 @@ function delay(seconds) {
 
 function getRandomDelay() {
   return Math.floor(Math.random() * (MAX_DELAY - MIN_DELAY + 1)) + MIN_DELAY;
+}
+
+function getRandomAmount() {
+  // Random between 0.00003 and 0.0001 ETH
+  const min = 0.00003;
+  const max = 0.0001;
+  const random = Math.random() * (max - min) + min;
+  return random.toFixed(5); // 5 decimal places
 }
 
 // ===== MAIN FUNCTIONS =====
@@ -195,25 +203,9 @@ async function main() {
     console.log(chalk.green(`💰 Saldo Anda: ${chalk.bold.yellow(balance)} ETH (Sepolia)`));
     console.log();
 
-    // Input amount
-    const amountInput = await question(
-      chalk.cyan(`💵 Masukkan jumlah ETH per transaksi [${chalk.yellow(DEFAULT_AMOUNT)}]: `)
-    );
-    const amount = amountInput.trim() || DEFAULT_AMOUNT;
-
-    // Validate amount
-    try {
-      const amountNum = parseFloat(amount);
-      if (isNaN(amountNum) || amountNum <= 0) {
-        console.log(chalk.red("\n❌ Jumlah tidak valid!\n"));
-        rl.close();
-        return;
-      }
-    } catch (error) {
-      console.log(chalk.red("\n❌ Jumlah tidak valid!\n"));
-      rl.close();
-      return;
-    }
+    // Input amount (now just for show, will use random)
+    console.log(chalk.cyan(`💵 Amount per transaksi: ${chalk.yellow("Random")} (0.00003 - 0.0001 ETH)`));
+    console.log();
 
     // Input transaction count
     const countInput = await question(
@@ -229,21 +221,21 @@ async function main() {
 
     console.log();
 
-    // Show summary and estimate
-    const estimate = await estimateGasCost(amount);
+    // Show summary and estimate (with average values)
+    const avgAmount = ((0.00003 + 0.0001) / 2).toFixed(5);
+    const estimate = await estimateGasCost(avgAmount);
     if (estimate) {
-      const totalAmount = (parseFloat(amount) * txCount).toFixed(6);
+      const minTotal = (0.00003 * txCount).toFixed(6);
+      const maxTotal = (0.0001 * txCount).toFixed(6);
       const estimatedGas = (parseFloat(estimate.gasCost) * txCount).toFixed(6);
-      const estimatedTotal = (parseFloat(estimate.totalCost) * txCount).toFixed(6);
 
       console.log(chalk.cyan.bold("📋 RINGKASAN TRANSAKSI"));
       console.log(chalk.cyan("─".repeat(60)));
       console.log(chalk.white(`   Gas Price        : ${chalk.yellow(estimate.gasPrice)} Gwei`));
-      console.log(chalk.white(`   Amount per TX    : ${chalk.yellow(amount)} ETH`));
+      console.log(chalk.white(`   Amount per TX    : ${chalk.yellow("Random")} (0.00003 - 0.0001 ETH)`));
       console.log(chalk.white(`   Jumlah TX        : ${chalk.yellow(txCount)}x`));
-      console.log(chalk.white(`   Total Amount     : ${chalk.yellow(totalAmount)} ETH`));
+      console.log(chalk.white(`   Est. Total Amount: ${chalk.yellow(minTotal)} - ${chalk.yellow(maxTotal)} ETH`));
       console.log(chalk.white(`   Estimasi Gas     : ${chalk.yellow(estimatedGas)} ETH`));
-      console.log(chalk.white(`   Estimasi Total   : ${chalk.yellow.bold(estimatedTotal)} ETH`));
       console.log(chalk.cyan("─".repeat(60)));
       console.log();
     }
@@ -262,12 +254,15 @@ async function main() {
     // Execute transactions
     let successCount = 0;
     let failCount = 0;
+    let totalSent = 0;
     const startTime = Date.now();
 
     for (let i = 1; i <= txCount; i++) {
-      const success = await sendTransaction(amount, i, txCount);
+      const randomAmount = getRandomAmount();
+      const success = await sendTransaction(randomAmount, i, txCount);
       if (success) {
         successCount++;
+        totalSent += parseFloat(randomAmount);
       } else {
         failCount++;
       }
@@ -290,6 +285,7 @@ async function main() {
     console.log(chalk.green.bold("═".repeat(60)));
     console.log(chalk.white(`   ✅ Sukses       : ${chalk.green.bold(successCount)}/${txCount}`));
     console.log(chalk.white(`   ❌ Gagal        : ${chalk.red.bold(failCount)}/${txCount}`));
+    console.log(chalk.white(`   💸 Total Terkirim: ${chalk.yellow.bold(totalSent.toFixed(6))} ETH`));
     console.log(chalk.white(`   ⏱️  Durasi       : ${chalk.cyan(duration)} detik`));
     console.log(chalk.white(`   💰 Saldo Akhir  : ${chalk.yellow.bold(finalBalance)} ETH`));
     console.log(chalk.green.bold("═".repeat(60)));
