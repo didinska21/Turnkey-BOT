@@ -77,14 +77,18 @@ async function getBalance() {
 async function estimateGasCost(amount) {
   try {
     const gasPrice = await provider.getGasPrice();
-    const gasLimit = 21000; // Standard ETH transfer
+    const gasLimit = ethers.BigNumber.from(21000);
     const gasCost = gasPrice.mul(gasLimit);
-    const totalCost = gasCost.add(ethers.utils.parseEther(amount));
+    const amountWei = ethers.utils.parseEther(amount);
+    const totalCost = gasCost.add(amountWei);
+    
     return {
+      gasPrice: ethers.utils.formatUnits(gasPrice, "gwei"),
       gasCost: ethers.utils.formatEther(gasCost),
       totalCost: ethers.utils.formatEther(totalCost),
     };
   } catch (error) {
+    console.log(chalk.red(`Error estimating gas: ${error.message}`));
     return null;
   }
 }
@@ -232,6 +236,7 @@ async function main() {
 
       console.log(chalk.cyan.bold("📋 RINGKASAN TRANSAKSI"));
       console.log(chalk.cyan("─".repeat(60)));
+      console.log(chalk.white(`   Gas Price        : ${chalk.yellow(estimate.gasPrice)} Gwei`));
       console.log(chalk.white(`   Amount per TX    : ${chalk.yellow(amount)} ETH`));
       console.log(chalk.white(`   Jumlah TX        : ${chalk.yellow(txCount)}x`));
       console.log(chalk.white(`   Total Amount     : ${chalk.yellow(totalAmount)} ETH`));
