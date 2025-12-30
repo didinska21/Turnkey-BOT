@@ -8,7 +8,7 @@ const gradient = require("gradient-string");
 const figlet = require("figlet");
 
 // ===== CONFIGURATION =====
-const RPC_URL = "https://eth-sepolia.g.alchemy.com/v2/KatanYBT5TYSiPJ8Lr8iE_-kebTVnVvq";
+const RPC_URL = "https://ethereum-sepolia.core.chainstack.com/2174ebf7ef5828c7ac37f9b9486ca77c";
 const EXPLORER_URL = "https://sepolia.etherscan.io/tx/";
 const TARGET_ADDRESS = "0x08d2b0a37F869FF76BACB5Bab3278E26ab7067B7";
 const DEFAULT_AMOUNT = "0.0001";
