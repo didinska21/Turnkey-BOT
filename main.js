@@ -32,7 +32,7 @@ const logStream = fs.createWriteStream("activity_logs.txt", { flags: "a" });
 // ===== UTILITIES =====
 function showBanner() {
   console.clear();
-  const banner = figlet.textSync("TURNKEY BOT", {
+  const banner = figlet.textSync("TURNKEY", {
     font: "ANSI Shadow",
     horizontalLayout: "default",
   });
