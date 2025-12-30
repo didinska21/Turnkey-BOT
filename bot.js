@@ -193,7 +193,8 @@ function getRandomGasPrice() {
   const minGwei = config.transaction.min_gas_price_gwei;
   const maxGwei = config.transaction.max_gas_price_gwei;
   const random = Math.random() * (maxGwei - minGwei) + minGwei;
-  return parseFloat(random.toFixed(10)); // Return with high precision
+  // Return with 9 decimal places max (gwei precision limit)
+  return parseFloat(random.toFixed(9));
 }
 
 function maskProxy(proxyUrl) {
@@ -229,7 +230,9 @@ async function sendTransaction(walletData, walletIndex, txNumber, totalTx, total
       // Check balance
       const balance = await wallet.getBalance();
       const amountWei = ethers.utils.parseEther(amount);
-      const gasPrice = ethers.utils.parseUnits(gasPriceGwei.toString(), "gwei");
+      // Fix: Round gas price to 6 decimals to avoid precision issues
+      const gasPriceRounded = parseFloat(gasPriceGwei.toFixed(6));
+      const gasPrice = ethers.utils.parseUnits(gasPriceRounded.toString(), "gwei");
       const gasLimit = config.transaction.gas_limit;
       const gasCost = gasPrice.mul(gasLimit);
       const totalNeeded = amountWei.add(gasCost);
@@ -245,7 +248,7 @@ async function sendTransaction(walletData, walletIndex, txNumber, totalTx, total
       }
 
       // Send transaction
-      spinner.text = `📤 W${walletIndex + 1}/${totalWallets} | TX ${txNumber}/${totalTx} | ${gasPriceGwei.toFixed(10)} Gwei | ${proxyInfo} | Attempt ${attempt}/${config.batch.max_retries}...`;
+      spinner.text = `📤 W${walletIndex + 1}/${totalWallets} | TX ${txNumber}/${totalTx} | ${gasPriceRounded.toFixed(6)} Gwei | ${proxyInfo} | Attempt ${attempt}/${config.batch.max_retries}...`;
       
       const tx = await wallet.sendTransaction({
         to: config.network.target_address,
@@ -263,7 +266,7 @@ async function sendTransaction(walletData, walletIndex, txNumber, totalTx, total
       // Success
       spinner.succeed(
         chalk.green(
-          `✅ W${walletIndex + 1} | TX ${txNumber}/${totalTx} | ${amount} ETH | Gas: ${gasPriceGwei.toFixed(6)} Gwei | Block: ${receipt.blockNumber} | Sisa: ${ethers.utils.formatEther(newBalance)} ETH`
+          `✅ W${walletIndex + 1} | TX ${txNumber}/${totalTx} | ${amount} ETH | Gas: ${gasPriceRounded.toFixed(6)} Gwei | Block: ${receipt.blockNumber} | Sisa: ${ethers.utils.formatEther(newBalance)} ETH`
         )
       );
 
@@ -273,7 +276,7 @@ async function sendTransaction(walletData, walletIndex, txNumber, totalTx, total
       console.log();
 
       logStream.write(
-        `[SUCCESS] Wallet ${walletIndex + 1} | TX ${txNumber}/${totalTx} | Hash: ${tx.hash} | Amount: ${amount} ETH | Gas: ${gasPriceGwei.toFixed(6)} Gwei | Block: ${receipt.blockNumber} | Proxy: ${proxyInfo} | ${new Date().toISOString()}\n`
+        `[SUCCESS] Wallet ${walletIndex + 1} | TX ${txNumber}/${totalTx} | Hash: ${tx.hash} | Amount: ${amount} ETH | Gas: ${gasPriceRounded.toFixed(6)} Gwei | Block: ${receipt.blockNumber} | Proxy: ${proxyInfo} | ${new Date().toISOString()}\n`
       );
 
       return { success: true, amount: parseFloat(amount), skipped: false, gasUsed: actualGasUsed };
