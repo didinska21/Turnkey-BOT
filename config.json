@@ -17,7 +17,7 @@
     "batch_delay_hours": 12
   },
   "batch": {
-    "tx_per_batch": 500,
+    "tx_per_batch": 250,
     "max_retries": 3
   },
   "proxy": {
