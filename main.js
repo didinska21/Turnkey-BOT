@@ -183,12 +183,10 @@ async function main() {
   try {
     showBanner();
 
-    // Show balance
-    const balanceSpinner = ora("📊 Mengecek saldo...").start();
+    // Show balance (without spinner)
+    console.log(chalk.cyan("📊 Mengecek saldo..."));
     const balance = await getBalance();
-    balanceSpinner.succeed(
-      chalk.green(`💰 Saldo Anda: ${chalk.bold.yellow(balance)} ETH (Sepolia)`)
-    );
+    console.log(chalk.green(`💰 Saldo Anda: ${chalk.bold.yellow(balance)} ETH (Sepolia)`));
     console.log();
 
     // Input amount
