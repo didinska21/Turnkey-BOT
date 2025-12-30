@@ -213,27 +213,25 @@ async function resolveProxyIp(proxyUrl) {
     const url = new URL(proxyUrl);
     const hostname = url.hostname;
     const port = url.port;
+    const username = url.username || null;
     
     // Check if hostname is already an IP
-    if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
-      const result = `${hostname}:${port}`;
-      proxyIpCache.set(proxyUrl, result);
-      return result;
+    let ip = hostname;
+    if (!/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+      // Resolve hostname to IP
+      try {
+        const addresses = await dns.resolve4(hostname);
+        ip = addresses[0]; // Use first IP
+      } catch (dnsError) {
+        // If DNS fails, use hostname
+        ip = hostname;
+      }
     }
     
-    // Resolve hostname to IP
-    try {
-      const addresses = await dns.resolve4(hostname);
-      const ip = addresses[0]; // Use first IP
-      const result = `${ip}:${port}`;
-      proxyIpCache.set(proxyUrl, result);
-      return result;
-    } catch (dnsError) {
-      // If DNS fails, fallback to hostname:port
-      const result = `${hostname}:${port}`;
-      proxyIpCache.set(proxyUrl, result);
-      return result;
-    }
+    // Format: IP:PORT (username)
+    const result = username ? `${ip}:${port} (${username})` : `${ip}:${port}`;
+    proxyIpCache.set(proxyUrl, result);
+    return result;
   } catch {
     return "Invalid";
   }
