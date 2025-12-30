@@ -7,162 +7,292 @@ const ora = require("ora");
 const gradient = require("gradient-string");
 const figlet = require("figlet");
 
-// Banner
-function showBanner() {
-  console.clear();
-  const banner = figlet.textSync("TURNKEY", {
-    font: "ANSI Shadow",
-    horizontalLayout: "default",
-    verticalLayout: "default",
-  });
-  console.log(gradient.pastel.multiline(banner));
-  console.log(chalk.whiteBright("Build by: t.me/didinska\n"));
-}
+// ===== CONFIGURATION =====
+const RPC_URL = "https://eth-sepolia.g.alchemy.com/v2/KatanYBT5TYSiPJ8Lr8iE_-kebTVnVvq";
+const EXPLORER_URL = "https://sepolia.etherscan.io/tx/";
+const TARGET_ADDRESS = "0x08d2b0a37F869FF76BACB5Bab3278E26ab7067B7";
+const DEFAULT_AMOUNT = "0.0001";
+const MIN_DELAY = 30;
+const MAX_DELAY = 60;
+const MAX_RETRIES = 3;
+const CONFIRMATIONS = 2;
 
-// Delay dengan countdown spinner
-function delayWithCountdown(seconds) {
-  return new Promise((resolve) => {
-    let remaining = seconds;
-    const spinner = ora(`Menunggu ${remaining} detik...`).start();
-    const interval = setInterval(() => {
-      remaining--;
-      spinner.text = `Menunggu ${remaining} detik...`;
-      if (remaining <= 0) {
-        clearInterval(interval);
-        spinner.succeed(`Delay ${seconds} detik selesai.`);
-        resolve();
-      }
-    }, 1000);
-  });
-}
-
-// Countdown 24 jam (fitur 3)
-function countdown24Jam() {
-  return new Promise((resolve) => {
-    let sisa = 86400;
-    const spinner = ora("Menunggu 24 jam untuk pengiriman ulang...").start();
-    const interval = setInterval(() => {
-      const jam = Math.floor(sisa / 3600);
-      const menit = Math.floor((sisa % 3600) / 60);
-      const detik = sisa % 60;
-      spinner.text = `Countdown: ${jam.toString().padStart(2, "0")}:${menit.toString().padStart(2, "0")}:${detik.toString().padStart(2, "0")}`;
-      if (--sisa < 0) {
-        clearInterval(interval);
-        spinner.succeed("Countdown selesai. Mengirim batch baru...");
-        resolve();
-      }
-    }, 1000);
-  });
-}
-
-// Setup
-const rpcUrl = "https://ethereum-sepolia.publicnode.com";
-const explorerUrl = "https://sepolia.etherscan.io/tx/";
-const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
+// ===== SETUP =====
+const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
 const privateKey = process.env.PRIVATE_KEY;
+
 if (!privateKey) {
-  console.log(chalk.redBright("PRIVATE_KEY tidak ditemukan di .env"));
+  console.log(chalk.redBright("\n❌ PRIVATE_KEY tidak ditemukan di file .env\n"));
   process.exit(1);
 }
+
 const wallet = new ethers.Wallet(privateKey, provider);
-const addressList = JSON.parse(fs.readFileSync("address.json", "utf-8"));
-const logStream = fs.createWriteStream("logs.txt", { flags: "a" });
+const logStream = fs.createWriteStream("activity_logs.txt", { flags: "a" });
 
-// TX
-async function sendTx(to, amountInEther, index, total) {
-  const spinner = ora(`Mengirim ke ${to}...`).start();
+// ===== UTILITIES =====
+function showBanner() {
+  console.clear();
+  const banner = figlet.textSync("TURNKEY BOT", {
+    font: "ANSI Shadow",
+    horizontalLayout: "default",
+  });
+  console.log(gradient.pastel.multiline(banner));
+  console.log(chalk.cyan.bold("═".repeat(60)));
+  console.log(chalk.whiteBright(`  🎯 Target: ${TARGET_ADDRESS}`));
+  console.log(chalk.gray(`  📡 Network: Sepolia Testnet`));
+  console.log(chalk.cyan.bold("═".repeat(60)));
+  console.log();
+}
+
+function delay(seconds) {
+  return new Promise((resolve) => {
+    let remaining = seconds;
+    const spinner = ora({
+      text: `⏳ Menunggu ${remaining} detik...`,
+      color: "cyan",
+    }).start();
+
+    const interval = setInterval(() => {
+      remaining--;
+      spinner.text = `⏳ Menunggu ${remaining} detik...`;
+      if (remaining <= 0) {
+        clearInterval(interval);
+        spinner.succeed(chalk.green(`✓ Delay selesai`));
+        resolve();
+      }
+    }, 1000);
+  });
+}
+
+function getRandomDelay() {
+  return Math.floor(Math.random() * (MAX_DELAY - MIN_DELAY + 1)) + MIN_DELAY;
+}
+
+// ===== MAIN FUNCTIONS =====
+async function getBalance() {
+  const balance = await wallet.getBalance();
+  return ethers.utils.formatEther(balance);
+}
+
+async function estimateGasCost(amount) {
   try {
-    const saldo = await wallet.getBalance();
-    if (saldo.lt(ethers.utils.parseEther(amountInEther))) {
-      spinner.fail(chalk.redBright(`SALDO ETH TIDAK CUKUP untuk TX ${index}/${total}`));
-      logStream.write(`[FAILED] ${to} | SALDO TIDAK CUKUP | ${new Date().toLocaleString()}\n`);
-      return;
-    }
-
-    const tx = await wallet.sendTransaction({
-      to,
-      value: ethers.utils.parseEther(amountInEther),
-    });
-
-    spinner.text = "Menunggu konfirmasi...";
-    await tx.wait();
-    const balance = await wallet.getBalance();
-
-    spinner.succeed(`TX Sukses ke ${to} | Sisa: ${ethers.utils.formatEther(balance)} ETH`);
-    logStream.write(`[SUCCESS] ${to} | ${tx.hash} | ${new Date().toLocaleString()}\n`);
-    console.log(chalk.gray(`Explorer: ${explorerUrl}${tx.hash}\n`));
+    const gasPrice = await provider.getGasPrice();
+    const gasLimit = 21000; // Standard ETH transfer
+    const gasCost = gasPrice.mul(gasLimit);
+    const totalCost = gasCost.add(ethers.utils.parseEther(amount));
+    return {
+      gasCost: ethers.utils.formatEther(gasCost),
+      totalCost: ethers.utils.formatEther(totalCost),
+    };
   } catch (error) {
-    spinner.fail(`TX GAGAL ke ${to} | ${error.message}`);
-    logStream.write(`[FAILED] ${to} | ${error.message} | ${new Date().toLocaleString()}\n`);
+    return null;
   }
 }
 
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+async function sendTransaction(amount, txNumber, totalTx) {
+  const spinner = ora({
+    text: `📤 Preparing transaction ${txNumber}/${totalTx}...`,
+    color: "yellow",
+  }).start();
 
-function showMenu() {
-  showBanner();
-  console.log(gradient.pastel(`
-1. Transfer ke address tertentu
-2. Transfer ke beberapa address (loop tanpa henti)
-3. Kirim ke X address acak dari address.json (24 jam interval)
-4. Exit
-`));
-  rl.question(chalk.yellowBright("Pilih opsi (1-4): "), (option) => {
-    switch (option) {
-      case '1': transferToSpecific(); break;
-      case '2': transferToLoop(); break;
-      case '3': transferToRandom(); break;
-      case '4': console.log(chalk.green("Keluar dari program.")); rl.close(); break;
-      default: console.log(chalk.red("Pilihan tidak valid.")); setTimeout(showMenu, 1500);
-    }
-  });
-}
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      // Check balance
+      const balance = await wallet.getBalance();
+      const amountWei = ethers.utils.parseEther(amount);
+      const gasPrice = await provider.getGasPrice();
+      const gasLimit = 21000;
+      const gasCost = gasPrice.mul(gasLimit);
+      const totalNeeded = amountWei.add(gasCost);
 
-function transferToSpecific() {
-  rl.question(chalk.yellow("Address tujuan: "), (to) => {
-    rl.question(chalk.yellow("Jumlah ETH (contoh: 0.0001): "), (amount) => {
-      rl.question(chalk.yellow("Berapa kali mengirim ke address ini?: "), async (count) => {
-        const txCount = parseInt(count);
-        if (isNaN(txCount) || txCount < 1) return showMenu();
-        for (let i = 0; i < txCount; i++) {
-          await sendTx(to, amount, i + 1, txCount);
-          await delayWithCountdown(Math.floor(Math.random() * 5) + 5);
-        }
-        setTimeout(showMenu, 1500);
-      });
-    });
-  });
-}
-
-async function transferToLoop() {
-  rl.question(chalk.yellow(`Ambil berapa address pertama untuk loop? (1-${addressList.length}): `), async (input) => {
-    const count = parseInt(input);
-    if (isNaN(count) || count < 1 || count > addressList.length) return showMenu();
-    console.log(chalk.green(`Loop mengirim ke ${count} address tanpa henti (CTRL+C untuk stop)`));
-    let loopIndex = 0, txCount = 1;
-    while (true) {
-      const to = addressList[loopIndex];
-      await sendTx(to, "0.0001", txCount, "∞");
-      await delayWithCountdown(Math.floor(Math.random() * 5) + 5);
-      loopIndex = (loopIndex + 1) % count;
-      txCount++;
-    }
-  });
-}
-
-async function transferToRandom() {
-  rl.question(chalk.yellow(`Input jumlah transfer max(335): `), async (input) => {
-    const count = parseInt(input);
-    if (isNaN(count) || count < 1 || count > addressList.length) return showMenu();
-    while (true) {
-      const shuffled = addressList.sort(() => 0.5 - Math.random()).slice(0, count);
-      for (let i = 0; i < shuffled.length; i++) {
-        await sendTx(shuffled[i], "0.0001", i + 1, count);
-        await delayWithCountdown(Math.floor(Math.random() * 5) + 5);
+      if (balance.lt(totalNeeded)) {
+        spinner.fail(
+          chalk.redBright(
+            `❌ Saldo tidak cukup! Perlu: ${ethers.utils.formatEther(totalNeeded)} ETH, Punya: ${ethers.utils.formatEther(balance)} ETH`
+          )
+        );
+        logStream.write(
+          `[FAILED] TX ${txNumber} | Insufficient balance | ${new Date().toISOString()}\n`
+        );
+        return false;
       }
-      await countdown24Jam();
+
+      // Send transaction
+      spinner.text = `📤 Sending transaction ${txNumber}/${totalTx} (Attempt ${attempt}/${MAX_RETRIES})...`;
+      
+      const tx = await wallet.sendTransaction({
+        to: TARGET_ADDRESS,
+        value: amountWei,
+        gasLimit: gasLimit,
+      });
+
+      spinner.text = `⏳ Waiting for confirmation... (${tx.hash.substring(0, 10)}...)`;
+      
+      const receipt = await tx.wait(CONFIRMATIONS);
+      const newBalance = await wallet.getBalance();
+
+      // Success
+      spinner.succeed(
+        chalk.green(
+          `✅ TX ${txNumber}/${totalTx} Success! | Block: ${receipt.blockNumber} | Sisa: ${ethers.utils.formatEther(newBalance)} ETH`
+        )
+      );
+
+      console.log(chalk.gray(`   🔗 ${EXPLORER_URL}${tx.hash}`));
+      console.log(chalk.gray(`   ⛽ Gas Used: ${receipt.gasUsed.toString()} | Fee: ${ethers.utils.formatEther(receipt.gasUsed.mul(receipt.effectiveGasPrice))} ETH`));
+      console.log();
+
+      logStream.write(
+        `[SUCCESS] TX ${txNumber}/${totalTx} | Hash: ${tx.hash} | Block: ${receipt.blockNumber} | Amount: ${amount} ETH | ${new Date().toISOString()}\n`
+      );
+
+      return true;
+    } catch (error) {
+      if (attempt === MAX_RETRIES) {
+        spinner.fail(
+          chalk.redBright(`❌ TX ${txNumber}/${totalTx} FAILED after ${MAX_RETRIES} attempts`)
+        );
+        console.log(chalk.red(`   Error: ${error.message}\n`));
+        logStream.write(
+          `[FAILED] TX ${txNumber}/${totalTx} | Error: ${error.message} | ${new Date().toISOString()}\n`
+        );
+        return false;
+      }
+      spinner.text = `⚠️  Retry ${attempt + 1}/${MAX_RETRIES}...`;
+      await new Promise((r) => setTimeout(r, 3000));
     }
-  });
+  }
+  return false;
 }
 
-showMenu();
+// ===== INTERACTIVE MENU =====
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+});
+
+function question(query) {
+  return new Promise((resolve) => rl.question(query, resolve));
+}
+
+async function main() {
+  showBanner();
+
+  // Show balance
+  const balanceSpinner = ora("📊 Mengecek saldo...").start();
+  const balance = await getBalance();
+  balanceSpinner.succeed(
+    chalk.green(`💰 Saldo Anda: ${chalk.bold.yellow(balance)} ETH (Sepolia)`)
+  );
+  console.log();
+
+  // Input amount
+  const amountInput = await question(
+    chalk.cyan(`💵 Masukkan jumlah ETH per transaksi [${chalk.yellow(DEFAULT_AMOUNT)}]: `)
+  );
+  const amount = amountInput.trim() || DEFAULT_AMOUNT;
+
+  // Validate amount
+  try {
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      console.log(chalk.red("\n❌ Jumlah tidak valid!\n"));
+      rl.close();
+      return;
+    }
+  } catch (error) {
+    console.log(chalk.red("\n❌ Jumlah tidak valid!\n"));
+    rl.close();
+    return;
+  }
+
+  // Input transaction count
+  const countInput = await question(
+    chalk.cyan(`🔢 Berapa kali transaksi yang ingin dikirim?: `)
+  );
+  const txCount = parseInt(countInput);
+
+  if (isNaN(txCount) || txCount < 1) {
+    console.log(chalk.red("\n❌ Jumlah transaksi tidak valid!\n"));
+    rl.close();
+    return;
+  }
+
+  console.log();
+
+  // Show summary and estimate
+  const estimate = await estimateGasCost(amount);
+  if (estimate) {
+    const totalAmount = (parseFloat(amount) * txCount).toFixed(6);
+    const estimatedGas = (parseFloat(estimate.gasCost) * txCount).toFixed(6);
+    const estimatedTotal = (parseFloat(estimate.totalCost) * txCount).toFixed(6);
+
+    console.log(chalk.cyan.bold("📋 RINGKASAN TRANSAKSI"));
+    console.log(chalk.cyan("─".repeat(60)));
+    console.log(chalk.white(`   Amount per TX    : ${chalk.yellow(amount)} ETH`));
+    console.log(chalk.white(`   Jumlah TX        : ${chalk.yellow(txCount)}x`));
+    console.log(chalk.white(`   Total Amount     : ${chalk.yellow(totalAmount)} ETH`));
+    console.log(chalk.white(`   Estimasi Gas     : ${chalk.yellow(estimatedGas)} ETH`));
+    console.log(chalk.white(`   Estimasi Total   : ${chalk.yellow.bold(estimatedTotal)} ETH`));
+    console.log(chalk.cyan("─".repeat(60)));
+    console.log();
+  }
+
+  // Confirm
+  const confirm = await question(chalk.yellow("⚠️  Lanjutkan? (y/n): "));
+  if (confirm.toLowerCase() !== "y") {
+    console.log(chalk.red("\n❌ Dibatalkan.\n"));
+    rl.close();
+    return;
+  }
+
+  console.log();
+  console.log(chalk.green.bold("🚀 Memulai pengiriman transaksi...\n"));
+
+  // Execute transactions
+  let successCount = 0;
+  let failCount = 0;
+  const startTime = Date.now();
+
+  for (let i = 1; i <= txCount; i++) {
+    const success = await sendTransaction(amount, i, txCount);
+    if (success) {
+      successCount++;
+    } else {
+      failCount++;
+    }
+
+    // Delay between transactions (except last one)
+    if (i < txCount) {
+      const delayTime = getRandomDelay();
+      await delay(delayTime);
+    }
+  }
+
+  // Final summary
+  const endTime = Date.now();
+  const duration = Math.floor((endTime - startTime) / 1000);
+  const finalBalance = await getBalance();
+
+  console.log();
+  console.log(chalk.green.bold("═".repeat(60)));
+  console.log(chalk.green.bold("🎉 SELESAI!"));
+  console.log(chalk.green.bold("═".repeat(60)));
+  console.log(chalk.white(`   ✅ Sukses       : ${chalk.green.bold(successCount)}/${txCount}`));
+  console.log(chalk.white(`   ❌ Gagal        : ${chalk.red.bold(failCount)}/${txCount}`));
+  console.log(chalk.white(`   ⏱️  Durasi       : ${chalk.cyan(duration)} detik`));
+  console.log(chalk.white(`   💰 Saldo Akhir  : ${chalk.yellow.bold(finalBalance)} ETH`));
+  console.log(chalk.green.bold("═".repeat(60)));
+  console.log();
+  console.log(chalk.gray(`📝 Log tersimpan di: activity_logs.txt`));
+  console.log();
+
+  rl.close();
+}
+
+// ===== RUN =====
+main().catch((error) => {
+  console.log(chalk.red(`\n❌ Error: ${error.message}\n`));
+  rl.close();
+  process.exit(1);
+});
