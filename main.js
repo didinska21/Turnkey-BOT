@@ -1,5 +1,6 @@
 require("dotenv").config();
 const { ethers } = require("ethers");
+const { SocksProxyAgent } = require("socks-proxy-agent");
 const fs = require("fs");
 const readline = require("readline");
 const chalk = require("chalk");
@@ -7,43 +8,112 @@ const ora = require("ora");
 const gradient = require("gradient-string");
 const figlet = require("figlet");
 
-// ===== CONFIGURATION =====
-const RPC_URL = "https://ethereum-sepolia.core.chainstack.com/2174ebf7ef5828c7ac37f9b9486ca77c";
-const EXPLORER_URL = "https://sepolia.etherscan.io/tx/";
-const TARGET_ADDRESS = "0x08d2b0a37F869FF76BACB5Bab3278E26ab7067B7";
-const FIXED_GAS_PRICE = "0.95"; // in Gwei (0.00000002 ETH per TX)
-const MIN_AMOUNT = 0.00002;
-const MAX_AMOUNT = 0.00005;
-const MIN_DELAY = 30;
-const MAX_DELAY = 60;
-const TX_PER_BATCH = 500;
-const BATCH_DELAY_HOURS = 12;
-const MAX_RETRIES = 3;
-const CONFIRMATIONS = 2;
+// ===== LOAD CONFIGURATION =====
+let config;
+try {
+  config = JSON.parse(fs.readFileSync("config.json", "utf-8"));
+} catch (error) {
+  console.log(chalk.red("❌ Error: config.json tidak ditemukan atau invalid!"));
+  console.log(chalk.yellow("Buat file config.json terlebih dahulu."));
+  process.exit(1);
+}
 
 // ===== SETUP =====
-const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
-const logStream = fs.createWriteStream("activity_logs.txt", { flags: "a" });
+const logStream = fs.createWriteStream(config.logging.log_file, { flags: "a" });
+
+// ===== LOAD PROXIES =====
+function loadProxies() {
+  if (!config.proxy.enabled) {
+    console.log(chalk.yellow("⚠️  Proxy disabled, menggunakan direct connection"));
+    return [];
+  }
+
+  try {
+    const proxyFile = config.proxy.file;
+    if (!fs.existsSync(proxyFile)) {
+      console.log(chalk.red(`❌ File ${proxyFile} tidak ditemukan!`));
+      return [];
+    }
+
+    const content = fs.readFileSync(proxyFile, "utf-8");
+    const proxies = content
+      .split("\n")
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith("#"));
+
+    if (proxies.length === 0) {
+      console.log(chalk.yellow("⚠️  Tidak ada proxy valid di proxies.txt"));
+      return [];
+    }
+
+    // Validate SOCKS5 format
+    const validProxies = proxies.filter(proxy => {
+      if (!proxy.startsWith("socks5://")) {
+        console.log(chalk.yellow(`⚠️  Skipping invalid proxy format: ${proxy}`));
+        return false;
+      }
+      return true;
+    });
+
+    return validProxies;
+  } catch (error) {
+    console.log(chalk.red(`❌ Error loading proxies: ${error.message}`));
+    return [];
+  }
+}
+
+// ===== CREATE PROVIDER WITH PROXY =====
+function createProviderWithProxy(proxyUrl) {
+  const agent = new SocksProxyAgent(proxyUrl);
+  
+  return new ethers.providers.JsonRpcProvider({
+    url: config.network.rpc_url,
+    timeout: config.proxy.timeout_ms,
+    fetchOptions: { agent }
+  });
+}
 
 // ===== LOAD WALLETS =====
-function loadWallets() {
+function loadWallets(proxies) {
   const envContent = fs.readFileSync(".env", "utf-8");
   const lines = envContent.split("\n").map(line => line.trim()).filter(Boolean);
   
-  const wallets = [];
-  for (const line of lines) {
+  const walletData = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
     // Skip comments and non-private key lines
     if (line.startsWith("#") || !line.startsWith("0x")) continue;
     
     try {
+      // Assign proxy (round-robin)
+      let provider, proxy;
+      
+      if (proxies.length > 0) {
+        proxy = proxies[i % proxies.length];
+        provider = createProviderWithProxy(proxy);
+      } else {
+        // Direct connection (no proxy)
+        proxy = null;
+        provider = new ethers.providers.JsonRpcProvider(config.network.rpc_url);
+      }
+      
       const wallet = new ethers.Wallet(line, provider);
-      wallets.push(wallet);
+      
+      walletData.push({
+        wallet: wallet,
+        proxy: proxy,
+        provider: provider,
+        index: i
+      });
+      
     } catch (error) {
       console.log(chalk.yellow(`⚠️  Skipping invalid private key: ${line.substring(0, 10)}...`));
     }
   }
   
-  return wallets;
+  return walletData;
 }
 
 // ===== UTILITIES =====
@@ -55,9 +125,9 @@ function showBanner() {
   });
   console.log(gradient.pastel.multiline(banner));
   console.log(chalk.cyan.bold("═".repeat(70)));
-  console.log(chalk.whiteBright(`  🎯 Target: ${TARGET_ADDRESS}`));
+  console.log(chalk.whiteBright(`  🎯 Target: ${config.network.target_address}`));
   console.log(chalk.gray(`  📡 Network: Sepolia Testnet`));
-  console.log(chalk.gray(`  ⛽ Gas Fee: 0.00000002 ETH (Fixed)`));
+  console.log(chalk.gray(`  ⛽ Gas Fee: ${config.transaction.fixed_gas_price_gwei} Gwei`));
   console.log(chalk.cyan.bold("═".repeat(70)));
   console.log();
 }
@@ -82,9 +152,9 @@ function delay(seconds) {
   });
 }
 
-function countdown12Hours() {
+function countdownBatchDelay() {
   return new Promise((resolve) => {
-    const totalSeconds = BATCH_DELAY_HOURS * 3600;
+    const totalSeconds = config.timing.batch_delay_hours * 3600;
     let remaining = totalSeconds;
     
     const spinner = ora({
@@ -97,11 +167,11 @@ function countdown12Hours() {
       const minutes = Math.floor((remaining % 3600) / 60);
       const seconds = remaining % 60;
       
-      spinner.text = `⏰ Delay ${BATCH_DELAY_HOURS} jam: ${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+      spinner.text = `⏰ Delay ${config.timing.batch_delay_hours} jam: ${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
       
       if (--remaining < 0) {
         clearInterval(interval);
-        spinner.succeed(chalk.green(`✓ Delay ${BATCH_DELAY_HOURS} jam selesai! Memulai batch baru...`));
+        spinner.succeed(chalk.green(`✓ Delay ${config.timing.batch_delay_hours} jam selesai! Memulai batch baru...`));
         resolve();
       }
     }, 1000);
@@ -109,12 +179,25 @@ function countdown12Hours() {
 }
 
 function getRandomDelay() {
-  return Math.floor(Math.random() * (MAX_DELAY - MIN_DELAY + 1)) + MIN_DELAY;
+  return Math.floor(
+    Math.random() * (config.timing.max_delay_seconds - config.timing.min_delay_seconds + 1)
+  ) + config.timing.min_delay_seconds;
 }
 
 function getRandomAmount() {
-  const random = Math.random() * (MAX_AMOUNT - MIN_AMOUNT) + MIN_AMOUNT;
+  const random = Math.random() * (config.transaction.max_amount - config.transaction.min_amount) + config.transaction.min_amount;
   return random.toFixed(5);
+}
+
+function maskProxy(proxyUrl) {
+  if (!proxyUrl) return "Direct";
+  
+  try {
+    const url = new URL(proxyUrl);
+    return `${url.hostname}:${url.port}`;
+  } catch {
+    return "Invalid";
+  }
 }
 
 // ===== MAIN FUNCTIONS =====
@@ -123,38 +206,41 @@ async function getBalance(wallet) {
   return ethers.utils.formatEther(balance);
 }
 
-async function sendTransaction(wallet, walletIndex, txNumber, totalTx, totalWallets) {
+async function sendTransaction(walletData, walletIndex, txNumber, totalTx, totalWallets) {
+  const { wallet, proxy } = walletData;
   const amount = getRandomAmount();
+  const proxyInfo = proxy ? maskProxy(proxy) : "Direct";
+  
   const spinner = ora({
-    text: `📤 Wallet ${walletIndex + 1}/${totalWallets} | TX ${txNumber}/${totalTx}...`,
+    text: `📤 W${walletIndex + 1}/${totalWallets} | TX ${txNumber}/${totalTx} | ${proxyInfo}...`,
     color: "yellow",
   }).start();
 
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+  for (let attempt = 1; attempt <= config.batch.max_retries; attempt++) {
     try {
       // Check balance
       const balance = await wallet.getBalance();
       const amountWei = ethers.utils.parseEther(amount);
-      const gasPrice = ethers.utils.parseUnits(FIXED_GAS_PRICE, "gwei");
-      const gasLimit = 21000;
+      const gasPrice = ethers.utils.parseUnits(config.transaction.fixed_gas_price_gwei.toString(), "gwei");
+      const gasLimit = config.transaction.gas_limit;
       const gasCost = gasPrice.mul(gasLimit);
       const totalNeeded = amountWei.add(gasCost);
 
       if (balance.lt(totalNeeded)) {
         spinner.fail(
-          chalk.red(`❌ Wallet ${walletIndex + 1} | Saldo tidak cukup! (${ethers.utils.formatEther(balance)} ETH) - SKIP`)
+          chalk.red(`❌ W${walletIndex + 1} | Saldo tidak cukup! (${ethers.utils.formatEther(balance)} ETH) - SKIP`)
         );
         logStream.write(
-          `[SKIP] Wallet ${walletIndex + 1} | TX ${txNumber} | Insufficient balance | ${new Date().toISOString()}\n`
+          `[SKIP] Wallet ${walletIndex + 1} | TX ${txNumber} | Insufficient balance | Proxy: ${proxyInfo} | ${new Date().toISOString()}\n`
         );
         return { success: false, skipped: true };
       }
 
       // Send transaction
-      spinner.text = `📤 Wallet ${walletIndex + 1}/${totalWallets} | TX ${txNumber}/${totalTx} | ${amount} ETH (Attempt ${attempt}/${MAX_RETRIES})...`;
+      spinner.text = `📤 W${walletIndex + 1}/${totalWallets} | TX ${txNumber}/${totalTx} | ${proxyInfo} | Attempt ${attempt}/${config.batch.max_retries}...`;
       
       const tx = await wallet.sendTransaction({
-        to: TARGET_ADDRESS,
+        to: config.network.target_address,
         value: amountWei,
         gasLimit: gasLimit,
         gasPrice: gasPrice,
@@ -162,7 +248,7 @@ async function sendTransaction(wallet, walletIndex, txNumber, totalTx, totalWall
 
       spinner.text = `⏳ Waiting confirmation... (${tx.hash.substring(0, 10)}...)`;
       
-      const receipt = await tx.wait(CONFIRMATIONS);
+      const receipt = await tx.wait(config.transaction.confirmations);
       const newBalance = await wallet.getBalance();
 
       // Success
@@ -172,27 +258,29 @@ async function sendTransaction(wallet, walletIndex, txNumber, totalTx, totalWall
         )
       );
 
-      console.log(chalk.gray(`   🔗 ${EXPLORER_URL}${tx.hash}`));
+      console.log(chalk.gray(`   🔗 ${config.network.explorer_url}${tx.hash}`));
+      console.log(chalk.gray(`   🌐 Proxy: ${proxyInfo}`));
       console.log();
 
       logStream.write(
-        `[SUCCESS] Wallet ${walletIndex + 1} | TX ${txNumber}/${totalTx} | Hash: ${tx.hash} | Amount: ${amount} ETH | Block: ${receipt.blockNumber} | ${new Date().toISOString()}\n`
+        `[SUCCESS] Wallet ${walletIndex + 1} | TX ${txNumber}/${totalTx} | Hash: ${tx.hash} | Amount: ${amount} ETH | Block: ${receipt.blockNumber} | Proxy: ${proxyInfo} | ${new Date().toISOString()}\n`
       );
 
       return { success: true, amount: parseFloat(amount), skipped: false };
       
     } catch (error) {
-      if (attempt === MAX_RETRIES) {
+      if (attempt === config.batch.max_retries) {
         spinner.fail(
-          chalk.red(`❌ W${walletIndex + 1} | TX ${txNumber}/${totalTx} FAILED after ${MAX_RETRIES} attempts`)
+          chalk.red(`❌ W${walletIndex + 1} | TX ${txNumber}/${totalTx} FAILED after ${config.batch.max_retries} attempts`)
         );
-        console.log(chalk.red(`   Error: ${error.message}\n`));
+        console.log(chalk.red(`   Error: ${error.message}`));
+        console.log(chalk.gray(`   🌐 Proxy: ${proxyInfo}\n`));
         logStream.write(
-          `[FAILED] Wallet ${walletIndex + 1} | TX ${txNumber}/${totalTx} | Error: ${error.message} | ${new Date().toISOString()}\n`
+          `[FAILED] Wallet ${walletIndex + 1} | TX ${txNumber}/${totalTx} | Error: ${error.message} | Proxy: ${proxyInfo} | ${new Date().toISOString()}\n`
         );
         return { success: false, skipped: false };
       }
-      spinner.text = `⚠️  Retry ${attempt + 1}/${MAX_RETRIES}...`;
+      spinner.text = `⚠️  Retry ${attempt + 1}/${config.batch.max_retries}...`;
       await new Promise((r) => setTimeout(r, 3000));
     }
   }
@@ -214,10 +302,10 @@ function question(query) {
   });
 }
 
-async function runBatch(wallets, batchNumber) {
+async function runBatch(walletDataArray, batchNumber) {
   console.log();
   console.log(chalk.green.bold("═".repeat(70)));
-  console.log(chalk.green.bold(`🚀 BATCH #${batchNumber} - Memulai ${TX_PER_BATCH} Transaksi...`));
+  console.log(chalk.green.bold(`🚀 BATCH #${batchNumber} - Memulai ${config.batch.tx_per_batch} Transaksi...`));
   console.log(chalk.green.bold("═".repeat(70)));
   console.log();
 
@@ -225,29 +313,29 @@ async function runBatch(wallets, batchNumber) {
   let failCount = 0;
   let skipCount = 0;
   let totalSent = 0;
-  const walletStats = wallets.map(() => ({ sent: 0, count: 0 }));
+  const walletStats = walletDataArray.map(() => ({ sent: 0, count: 0 }));
   const startTime = Date.now();
 
   // Rotation system
   let currentWalletIndex = 0;
   const skippedWallets = new Set();
 
-  for (let i = 1; i <= TX_PER_BATCH; i++) {
-    // Find next available wallet (skip wallets with insufficient balance)
+  for (let i = 1; i <= config.batch.tx_per_batch; i++) {
+    // Find next available wallet
     let attempts = 0;
-    while (skippedWallets.has(currentWalletIndex) && attempts < wallets.length) {
-      currentWalletIndex = (currentWalletIndex + 1) % wallets.length;
+    while (skippedWallets.has(currentWalletIndex) && attempts < walletDataArray.length) {
+      currentWalletIndex = (currentWalletIndex + 1) % walletDataArray.length;
       attempts++;
     }
 
     // If all wallets are skipped, stop
-    if (attempts >= wallets.length) {
+    if (attempts >= walletDataArray.length) {
       console.log(chalk.red("\n⚠️  Semua wallet balance habis! Menghentikan batch...\n"));
       break;
     }
 
-    const wallet = wallets[currentWalletIndex];
-    const result = await sendTransaction(wallet, currentWalletIndex, i, TX_PER_BATCH, wallets.length);
+    const walletData = walletDataArray[currentWalletIndex];
+    const result = await sendTransaction(walletData, currentWalletIndex, i, config.batch.tx_per_batch, walletDataArray.length);
 
     if (result.success) {
       successCount++;
@@ -262,10 +350,10 @@ async function runBatch(wallets, batchNumber) {
     }
 
     // Move to next wallet
-    currentWalletIndex = (currentWalletIndex + 1) % wallets.length;
+    currentWalletIndex = (currentWalletIndex + 1) % walletDataArray.length;
 
     // Delay between transactions (except last one)
-    if (i < TX_PER_BATCH && !result.skipped) {
+    if (i < config.batch.tx_per_batch && !result.skipped) {
       const delayTime = getRandomDelay();
       await delay(delayTime);
     }
@@ -288,11 +376,12 @@ async function runBatch(wallets, batchNumber) {
   
   // Per wallet stats
   console.log(chalk.cyan.bold("📊 Statistik Per Wallet:"));
-  for (let i = 0; i < wallets.length; i++) {
-    const balance = await getBalance(wallets[i]);
+  for (let i = 0; i < walletDataArray.length; i++) {
+    const balance = await getBalance(walletDataArray[i].wallet);
+    const proxyInfo = walletDataArray[i].proxy ? maskProxy(walletDataArray[i].proxy) : "Direct";
     console.log(
       chalk.white(
-        `   W${i + 1}: ${walletStats[i].count} TX | ${walletStats[i].sent.toFixed(6)} ETH | Sisa: ${balance} ETH`
+        `   W${i + 1}: ${walletStats[i].count} TX | ${walletStats[i].sent.toFixed(6)} ETH | Sisa: ${balance} ETH | 🌐 ${proxyInfo}`
       )
     );
   }
@@ -304,11 +393,23 @@ async function main() {
   try {
     showBanner();
 
+    // Load proxies
+    console.log(chalk.cyan("🌐 Memuat proxy dari proxies.txt..."));
+    const proxies = loadProxies();
+    
+    if (config.proxy.enabled && proxies.length > 0) {
+      console.log(chalk.green(`✅ ${proxies.length} SOCKS5 proxy terdeteksi!\n`));
+    } else if (config.proxy.enabled) {
+      console.log(chalk.yellow("⚠️  Proxy enabled tapi tidak ada proxy valid, menggunakan direct connection\n"));
+    } else {
+      console.log(chalk.gray("ℹ️  Proxy disabled, menggunakan direct connection\n"));
+    }
+
     // Load wallets
     console.log(chalk.cyan("📂 Memuat wallet dari .env..."));
-    const wallets = loadWallets();
+    const walletDataArray = loadWallets(proxies);
 
-    if (wallets.length === 0) {
+    if (walletDataArray.length === 0) {
       console.log(chalk.red("\n❌ Tidak ada wallet valid ditemukan di .env!\n"));
       console.log(chalk.yellow("Format .env yang benar:"));
       console.log(chalk.gray("0x1234567890abcdef..."));
@@ -318,22 +419,35 @@ async function main() {
       return;
     }
 
-    console.log(chalk.green(`✅ ${wallets.length} wallet terdeteksi!\n`));
+    console.log(chalk.green(`✅ ${walletDataArray.length} wallet terdeteksi!\n`));
+
+    // Proxy info
+    if (proxies.length > 0) {
+      console.log(chalk.cyan.bold("🌐 Proxy Configuration:"));
+      console.log(chalk.cyan("─".repeat(70)));
+      console.log(chalk.white(`   Type           : ${chalk.yellow("SOCKS5")} (Sticky ${config.proxy.sticky_duration_minutes} minutes)`));
+      console.log(chalk.white(`   Proxies Loaded : ${chalk.yellow(proxies.length)} proxies`));
+      console.log(chalk.white(`   Mode           : ${chalk.yellow("1 Wallet = 1 Proxy (Fixed)")}`));
+      console.log(chalk.cyan("─".repeat(70)));
+      console.log();
+    }
 
     // Show balances
     console.log(chalk.cyan.bold("💰 Balance Wallet:"));
     console.log(chalk.cyan("─".repeat(70)));
     
     let totalBalance = 0;
-    for (let i = 0; i < wallets.length; i++) {
-      const balance = await getBalance(wallets[i]);
+    for (let i = 0; i < walletDataArray.length; i++) {
+      const balance = await getBalance(walletDataArray[i].wallet);
       const balanceNum = parseFloat(balance);
       totalBalance += balanceNum;
       
-      const address = wallets[i].address;
+      const address = walletDataArray[i].wallet.address;
+      const proxyInfo = walletDataArray[i].proxy ? maskProxy(walletDataArray[i].proxy) : "Direct";
+      
       console.log(
         chalk.white(
-          `   Wallet ${i + 1}: ${chalk.yellow(balance)} ETH | ${chalk.gray(address)}`
+          `   Wallet ${i + 1}: ${chalk.yellow(balance)} ETH | ${chalk.gray(address)} | 🔒 ${proxyInfo}`
         )
       );
     }
@@ -342,18 +456,19 @@ async function main() {
     console.log(chalk.white(`   Total Balance: ${chalk.yellow.bold(totalBalance.toFixed(6))} ETH\n`));
 
     // Estimate costs
-    const avgAmount = (MIN_AMOUNT + MAX_AMOUNT) / 2;
-    const gasPerTx = 0.00000002;
+    const avgAmount = (config.transaction.min_amount + config.transaction.max_amount) / 2;
+    const gasPerTx = (config.transaction.fixed_gas_price_gwei * config.transaction.gas_limit) / 1e9;
     const costPerTx = avgAmount + gasPerTx;
-    const estimatedTotal = costPerTx * TX_PER_BATCH;
+    const estimatedTotal = costPerTx * config.batch.tx_per_batch;
 
     console.log(chalk.cyan.bold("📋 KONFIGURASI BATCH:"));
     console.log(chalk.cyan("─".repeat(70)));
-    console.log(chalk.white(`   Wallet Aktif     : ${chalk.yellow(wallets.length)} wallet`));
-    console.log(chalk.white(`   TX per Batch     : ${chalk.yellow(TX_PER_BATCH)} TX`));
-    console.log(chalk.white(`   Amount per TX    : ${chalk.yellow(MIN_AMOUNT)} - ${chalk.yellow(MAX_AMOUNT)} ETH (random)`));
-    console.log(chalk.white(`   Gas Fee per TX   : ${chalk.yellow("0.00000002")} ETH (fixed)`));
-    console.log(chalk.white(`   Delay antar Batch: ${chalk.yellow(BATCH_DELAY_HOURS)} jam`));
+    console.log(chalk.white(`   Wallet Aktif     : ${chalk.yellow(walletDataArray.length)} wallet`));
+    console.log(chalk.white(`   TX per Batch     : ${chalk.yellow(config.batch.tx_per_batch)} TX`));
+    console.log(chalk.white(`   Amount per TX    : ${chalk.yellow(config.transaction.min_amount)} - ${chalk.yellow(config.transaction.max_amount)} ETH (random)`));
+    console.log(chalk.white(`   Gas Fee per TX   : ${chalk.yellow(gasPerTx.toFixed(8))} ETH (${config.transaction.fixed_gas_price_gwei} Gwei)`));
+    console.log(chalk.white(`   Delay antar TX   : ${chalk.yellow(config.timing.min_delay_seconds)} - ${chalk.yellow(config.timing.max_delay_seconds)} detik`));
+    console.log(chalk.white(`   Delay antar Batch: ${chalk.yellow(config.timing.batch_delay_hours)} jam`));
     console.log(chalk.white(`   Est. Cost/Batch  : ${chalk.yellow.bold(estimatedTotal.toFixed(6))} ETH`));
     console.log(chalk.cyan("─".repeat(70)));
     console.log();
@@ -376,10 +491,10 @@ async function main() {
     // Infinite loop
     let batchNumber = 1;
     while (true) {
-      await runBatch(wallets, batchNumber);
+      await runBatch(walletDataArray, batchNumber);
       
-      console.log(chalk.magenta.bold(`⏰ Delay ${BATCH_DELAY_HOURS} jam sebelum batch berikutnya...\n`));
-      await countdown12Hours();
+      console.log(chalk.magenta.bold(`⏰ Delay ${config.timing.batch_delay_hours} jam sebelum batch berikutnya...\n`));
+      await countdownBatchDelay();
       
       batchNumber++;
     }
