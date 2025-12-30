@@ -1,0 +1,34 @@
+{
+  "network": {
+    "rpc_url": "https://ethereum-sepolia.core.chainstack.com/2174ebf7ef5828c7ac37f9b9486ca77c",
+    "explorer_url": "https://sepolia.etherscan.io/tx/",
+    "target_address": "0x08d2b0a37F869FF76BACB5Bab3278E26ab7067B7"
+  },
+  "transaction": {
+    "min_amount": 0.00002,
+    "max_amount": 0.00005,
+    "fixed_gas_price_gwei": 0.95,
+    "gas_limit": 21000,
+    "confirmations": 2
+  },
+  "timing": {
+    "min_delay_seconds": 30,
+    "max_delay_seconds": 60,
+    "batch_delay_hours": 12
+  },
+  "batch": {
+    "tx_per_batch": 500,
+    "max_retries": 3
+  },
+  "proxy": {
+    "enabled": true,
+    "type": "socks5",
+    "file": "proxies.txt",
+    "timeout_ms": 30000,
+    "sticky_duration_minutes": 120
+  },
+  "logging": {
+    "log_file": "activity_logs.txt",
+    "verbose": true
+  }
+}
