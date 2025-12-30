@@ -7,9 +7,10 @@
   "transaction": {
     "min_amount": 0.00002,
     "max_amount": 0.00005,
-    "fixed_gas_price_gwei": 0.95,
+    "min_gas_price_gwei": 0.0004,
+    "max_gas_price_gwei": 0.002,
     "gas_limit": 21000,
-    "confirmations": 2
+    "confirmations": 1
   },
   "timing": {
     "min_delay_seconds": 30,
