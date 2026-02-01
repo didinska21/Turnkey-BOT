@@ -105,6 +105,7 @@ function loadWallets(proxies) {
   }
   
   const walletData = [];
+  let validKeyCount = 0;
   
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -133,11 +134,14 @@ function loadWallets(proxies) {
     }
     
     try {
-      // Assign proxy (round-robin)
+      // First, validate that this is a valid private key by trying to create a temporary wallet
+      const tempWallet = new ethers.Wallet(line);
+      
+      // If we get here, the private key is valid. Now create the actual wallet with provider
       let provider, proxy;
       
       if (proxies.length > 0) {
-        proxy = proxies[i % proxies.length];
+        proxy = proxies[validKeyCount % proxies.length];
         provider = createProviderWithProxy(proxy);
       } else {
         // Direct connection (no proxy)
@@ -158,8 +162,10 @@ function loadWallets(proxies) {
         wallet: wallet,
         proxy: proxy,
         provider: provider,
-        index: i
+        index: validKeyCount
       });
+      
+      validKeyCount++;
       
     } catch (error) {
       console.log(chalk.yellow(`⚠️  Skipping invalid private key: ${line.substring(0, 10)}... (${error.message})`));
