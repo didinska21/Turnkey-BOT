@@ -65,21 +65,25 @@ function loadProxies() {
 
 // ===== CREATE PROVIDER WITH PROXY =====
 function createProviderWithProxy(proxyUrl) {
-  const agent = new SocksProxyAgent(proxyUrl);
-  
-  const provider = new ethers.providers.JsonRpcProvider({
-    url: config.network.rpc_url,
-    timeout: 30000,
-    fetchOptions: { agent },
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  });
-  
-  // Aggressive polling for faster confirmation detection
-  provider.pollingInterval = 2000; // Check every 2 seconds
-  
-  return provider;
+  try {
+    const agent = new SocksProxyAgent(proxyUrl);
+    
+    const provider = new ethers.providers.JsonRpcProvider({
+      url: config.network.rpc_url,
+      timeout: 30000,
+      fetchOptions: { agent },
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    // Aggressive polling for faster confirmation detection
+    provider.pollingInterval = 2000; // Check every 2 seconds
+    
+    return provider;
+  } catch (error) {
+    throw new Error(`Invalid proxy URL format: ${proxyUrl} - ${error.message}`);
+  }
 }
 
 // ===== LOAD WALLETS FROM wallets.txt =====
@@ -142,7 +146,15 @@ function loadWallets(proxies) {
       
       if (proxies.length > 0) {
         proxy = proxies[validKeyCount % proxies.length];
-        provider = createProviderWithProxy(proxy);
+        
+        try {
+          provider = createProviderWithProxy(proxy);
+        } catch (proxyError) {
+          console.log(chalk.red(`❌ Error creating provider with proxy: ${proxy}`));
+          console.log(chalk.yellow(`   ${proxyError.message}`));
+          console.log(chalk.yellow(`   Skipping wallet ${validKeyCount + 1} due to proxy error`));
+          continue;
+        }
       } else {
         // Direct connection (no proxy)
         proxy = null;
@@ -168,7 +180,7 @@ function loadWallets(proxies) {
       validKeyCount++;
       
     } catch (error) {
-      console.log(chalk.yellow(`⚠️  Skipping invalid private key: ${line.substring(0, 10)}... (${error.message})`));
+      console.log(chalk.yellow(`⚠️  Skipping wallet: ${line.substring(0, 10)}... (${error.message})`));
     }
   }
   
