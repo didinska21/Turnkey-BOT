@@ -82,18 +82,55 @@ function createProviderWithProxy(proxyUrl) {
   return provider;
 }
 
-// ===== LOAD WALLETS =====
+// ===== LOAD WALLETS FROM wallets.txt =====
 function loadWallets(proxies) {
-  const envContent = fs.readFileSync(".env", "utf-8");
-  const lines = envContent.split("\n").map(line => line.trim()).filter(Boolean);
+  const walletFile = "wallets.txt";
+  
+  // Check if file exists
+  if (!fs.existsSync(walletFile)) {
+    console.log(chalk.red(`❌ File ${walletFile} tidak ditemukan!`));
+    console.log(chalk.yellow("\nBuat file wallets.txt dengan format:"));
+    console.log(chalk.gray("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"));
+    console.log(chalk.gray("0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"));
+    console.log(chalk.gray("0x9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba\n"));
+    return [];
+  }
+  
+  const fileContent = fs.readFileSync(walletFile, "utf-8");
+  const lines = fileContent.split("\n").map(line => line.trim()).filter(Boolean);
+  
+  if (lines.length === 0) {
+    console.log(chalk.red(`❌ File ${walletFile} kosong!`));
+    return [];
+  }
   
   const walletData = [];
   
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     
-    // Skip comments and non-private key lines
-    if (line.startsWith("#") || !line.startsWith("0x")) continue;
+    // Skip comments
+    if (line.startsWith("#")) {
+      continue;
+    }
+    
+    // Validate private key format
+    if (!line.startsWith("0x")) {
+      console.log(chalk.yellow(`⚠️  Skipping (no 0x prefix): ${line.substring(0, 10)}...`));
+      continue;
+    }
+    
+    if (line.length !== 66) {
+      console.log(chalk.yellow(`⚠️  Skipping (invalid length ${line.length}, expected 66): ${line.substring(0, 10)}...`));
+      continue;
+    }
+    
+    // Validate hex characters
+    const hexPattern = /^0x[0-9a-fA-F]{64}$/;
+    if (!hexPattern.test(line)) {
+      console.log(chalk.yellow(`⚠️  Skipping (invalid hex): ${line.substring(0, 10)}...`));
+      continue;
+    }
     
     try {
       // Assign proxy (round-robin)
@@ -125,7 +162,7 @@ function loadWallets(proxies) {
       });
       
     } catch (error) {
-      console.log(chalk.yellow(`⚠️  Skipping invalid private key: ${line.substring(0, 10)}...`));
+      console.log(chalk.yellow(`⚠️  Skipping invalid private key: ${line.substring(0, 10)}... (${error.message})`));
     }
   }
   
@@ -525,15 +562,15 @@ async function main() {
     }
 
     // Load wallets
-    console.log(chalk.cyan("📂 Memuat wallet dari .env..."));
+    console.log(chalk.cyan("📂 Memuat wallet dari wallets.txt..."));
     const walletDataArray = loadWallets(proxies);
 
     if (walletDataArray.length === 0) {
-      console.log(chalk.red("\n❌ Tidak ada wallet valid ditemukan di .env!\n"));
-      console.log(chalk.yellow("Format .env yang benar:"));
-      console.log(chalk.gray("0x1234567890abcdef..."));
-      console.log(chalk.gray("0xabcdef1234567890..."));
-      console.log(chalk.gray("0x9876543210fedcba...\n"));
+      console.log(chalk.red("\n❌ Tidak ada wallet valid ditemukan di wallets.txt!\n"));
+      console.log(chalk.yellow("Format wallets.txt yang benar:"));
+      console.log(chalk.gray("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"));
+      console.log(chalk.gray("0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"));
+      console.log(chalk.gray("0x9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba\n"));
       rl.close();
       return;
     }
